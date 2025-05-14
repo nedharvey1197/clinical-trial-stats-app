@@ -1,6 +1,32 @@
 import pandas as pd
 import streamlit as st
 from models.base_models import ClinicalTrialAnalysis
+import warnings
+import io
+warnings.simplefilter("always")
+
+
+# Set page config with wide layout
+st.set_page_config(page_title="Clinical Trial Analysis", layout="wide")
+st.markdown("""
+    <style>
+    .stButton > button, .stDownloadButton > button {
+        background-color: #1976d2;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 0.5em 1.5em;
+        font-size: 1.1em;
+        font-weight: bold;
+        margin: 0.5em 0;
+        transition: background 0.2s;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        background-color: #1565c0;
+        color: #fff;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # Canned Example Datasets (unchanged)
 canned_examples = {
@@ -180,7 +206,7 @@ with explain_col:
     st.header("Explanation")
     if model_type:
         st.markdown(
-            '<div class="explanation-bubble"><strong>What:</strong> Displaying a preloaded dataset for the selected model.</div>', unsafe_allow_html=True)
+            f'<div class="explanation-bubble"><strong>What:</strong> Displaying a preloaded dataset for the selected model: <b>{model_type}</b>.</div>', unsafe_allow_html=True)
         st.markdown(
             '<div class="explanation-bubble"><strong>Why:</strong> This allows you to see the expected data format and explore the analysis without entering your own data. The dataset is tailored to the model\'s requirements (e.g., 2 groups for T-test, repeated measures for Mixed ANOVA).</div>', unsafe_allow_html=True)
         st.markdown(
@@ -195,12 +221,27 @@ if model_type:
     with main_col:
         if auto_run:
             analysis = ClinicalTrialAnalysis(data)
-            results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+            warning_buffer = io.StringIO()
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                # Run your analysis
+                results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+                # Collect warning messages
+                for warn in w:
+                    if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning,)):
+                        warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n\n")
             st.subheader("Canned Example Results")
         else:
             if st.button("Run Canned Example"):
                 analysis = ClinicalTrialAnalysis(data)
-                results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+                warning_buffer = io.StringIO()
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.simplefilter("always")
+                    results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+                    for warn in w:
+                        # Only show warnings that are not Deprecation or PendingDeprecation
+                        if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning)):
+                            warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n")
                 st.subheader("Canned Example Results")
 
     with explain_col:
@@ -264,7 +305,7 @@ if results is not None:
                 st.write("Post-Hoc (Tukey HSD):")
                 posthoc = results['Post-Hoc']
                 if hasattr(posthoc, 'summary'):
-                    st.write(posthoc.summary())
+                    st.text(posthoc.summary())
                 elif hasattr(posthoc, '_results_table'):
                     st.dataframe(pd.DataFrame(posthoc._results_table.data[1:], columns=posthoc._results_table.data[0]))
                 else:
@@ -290,7 +331,29 @@ if results is not None:
             '<div class="explanation-bubble"><strong>Why:</strong> This tests the main hypotheses (e.g., differences between groups, effects over time). For ANOVA, an F-test is used; for T-test, a t-statistic. Mixed models provide detailed fit statistics (e.g., Log-Likelihood, AIC).</div>', unsafe_allow_html=True)
         st.markdown(
             '<div class="explanation-bubble"><strong>Source:</strong> Using <code>statsmodels</code> for ANOVA and mixed models, <code>scipy.stats</code> for alternative tests (e.g., Kruskal-Wallis). Equivalent to SAS PROC GLM or PROC MIXED.</div>', unsafe_allow_html=True)
+        # General explanatory text for statistical warnings
+        st.markdown("""
+        <div style="background:#e9ecef; color:#333; border-radius:8px; padding:1em; margin:1em 0;">
+        <strong>About Statistical Warnings</strong><br>
+        During statistical analysis, you may see warnings related to model fitting, convergence, or assumption checks. These are a normal part of the process, especially with small or synthetic datasets.<br>
+        <ul>
+            <li>Some warnings indicate the model had difficulty fitting the data or that certain assumptions were not fully met.</li>
+            <li>The app will automatically apply corrections when appropriate.</li>
+            <li>If you see these warnings with real data, consider reviewing your data quality, sample size, or model complexity.</li>
+        </ul>
+        <b>These warnings are shown for transparency and to help you better understand the analysis process.</b>
+        </div>
+        """, unsafe_allow_html=True)
 
+        # Display captured warnings (assuming you have warning_buffer as described earlier)
+        warnings_text = warning_buffer.getvalue()
+        if warnings_text:
+            st.markdown(
+                f'<div style="background:#fff3cd; color:#856404; border:1px solid #ffeeba; border-radius:8px; padding:1em; margin:1em 0;">'
+                f'<strong>Statistical Warnings:</strong><br><pre style="white-space:pre-wrap;">{warnings_text}\n</pre>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
     with main_col:
         # Visualization
         st.write("**Box/Interaction Plot:**")
@@ -304,31 +367,32 @@ if results is not None:
         st.markdown(
             '<div class="explanation-bubble"><strong>Source:</strong> Using <code>seaborn</code> and <code>matplotlib</code>, similar to SAS ODS Graphics output.</div>', unsafe_allow_html=True)
 
-# Download analysis results and explanation as HTML
-if model_type and 'results' in locals() and results:
-    import io
-    from datetime import datetime
-    html_content = io.StringIO()
-    html_content.write(f"<h2>Analysis Workflow: {model_type}</h2>")
-    html_content.write("<h3>Step 3: Explore a Canned Example</h3>")
-    if data is not None:
-        html_content.write(data.to_html(index=False))
-    html_content.write("<h3>Explanation</h3>")
-    html_content.write("<b>What:</b> Displaying a preloaded dataset for the selected model.<br>")
-    html_content.write("<b>Why:</b> This allows you to see the expected data format and explore the analysis without entering your own data. The dataset is tailored to the model's requirements.<br>")
-    html_content.write("<b>Source:</b> The data is predefined in the app.<hr>")
-    html_content.write("<h3>Canned Example Results</h3>")
-    for key, value in results['Assumptions'].items():
-        html_content.write(f"<b>{key}:</b> {value}<br>")
-    html_content.write(results['Descriptive Stats'].to_html(index=False))
-    html_content.write(results['LS Means'].to_html(index=False))
-    # Add more as needed
-    st.download_button(
-        label="Download Analysis & Explanation (HTML)",
-        data=html_content.getvalue(),
-        file_name=f"analysis_{model_type.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-        mime='text/html',
-    )
+    with main_col:
+    # Download analysis results and explanation as HTML
+        if model_type and 'results' in locals() and results:
+            import io
+            from datetime import datetime
+            html_content = io.StringIO()
+            html_content.write(f"<h2>Analysis Workflow: {model_type}</h2>")
+            html_content.write("<h3>Step 3: Explore a Canned Example</h3>")
+            if data is not None:
+                html_content.write(data.to_html(index=False))
+            html_content.write("<h3>Explanation</h3>")
+            html_content.write("<b>What:</b> Displaying a preloaded dataset for the selected model.<br>")
+            html_content.write("<b>Why:</b> This allows you to see the expected data format and explore the analysis without entering your own data. The dataset is tailored to the model's requirements.<br>")
+            html_content.write("<b>Source:</b> The data is predefined in the app.<hr>")
+            html_content.write("<h3>Canned Example Results</h3>")
+            for key, value in results['Assumptions'].items():
+                html_content.write(f"<b>{key}:</b> {value}<br>")
+            html_content.write(results['Descriptive Stats'].to_html(index=False))
+            html_content.write(results['LS Means'].to_html(index=False))
+            # Add more as needed
+            st.download_button(
+                label="Download Analysis & Explanation (HTML)",
+                data=html_content.getvalue(),
+                file_name=f"analysis_{model_type.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                mime='text/html',
+            )
 
 # Step 4: Custom Data Input
 if 'results' in locals() and results:
@@ -413,7 +477,14 @@ if data is not None:
     if st.button("Run Analysis with Custom Data"):
         try:
             analysis = ClinicalTrialAnalysis(data)
-            results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+            warning_buffer = io.StringIO()
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                results = analysis.run_analysis(model_type, "Outcome", between_factors, repeated_factors)
+                for warn in w:
+                    # Only show warnings that are not Deprecation or PendingDeprecation
+                    if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning,)):
+                        warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n\n")
 
             st.subheader("Custom Data Results")
             # Assumption Checks
@@ -477,3 +548,26 @@ with explain_col:
         st.write("**What:** Running the statistical analysis on your custom data.")
         st.write("**Why:** This applies the selected model to your data, producing the same detailed outputs as the canned example for direct comparison.")
         st.write("**Source:** The analysis uses `statsmodels` and `scipy`, equivalent to SAS PROC GLM or PROC MIXED.")
+        # General explanatory text for statistical warnings
+        st.markdown("""
+        <div style="background:#e9ecef; color:#333; border-radius:8px; padding:1em; margin:1em 0;">
+        <strong>About Statistical Warnings</strong><br>
+        During statistical analysis, you may see warnings related to model fitting, convergence, or assumption checks. These are a normal part of the process, especially with small or synthetic datasets.<br>
+        <ul>
+            <li>Some warnings indicate the model had difficulty fitting the data or that certain assumptions were not fully met.</li>
+            <li>The app will automatically apply corrections when appropriate.</li>
+            <li>If you see these warnings with real data, consider reviewing your data quality, sample size, or model complexity.</li>
+        </ul>
+        <b>These warnings are shown for transparency and to help you better understand the analysis process.</b>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Display captured warnings (assuming you have warning_buffer as described earlier)
+        warnings_text = warning_buffer.getvalue()
+        if warnings_text:
+            st.markdown(
+                f'<div style="background:#fff3cd; color:#856404; border:1px solid #ffeeba; border-radius:8px; padding:1em; margin:1em 0;">'
+                f'<strong>Statistical Warnings:</strong><br><pre style="white-space:pre-wrap;">{warnings_text}\n</pre>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
