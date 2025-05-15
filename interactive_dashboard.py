@@ -7,7 +7,7 @@ import warnings
 import plotly.express as px
 import json
 from statistics_engine.visualization import AdvancedVisualization
-from models.base_models import ClinicalTrialAnalysis
+from statistics_engine.base_models import ClinicalTrialAnalysis
 from statistics_engine.enhanced_models import EnhancedClinicalTrialAnalysis
 
 # Configure page
@@ -47,8 +47,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Import data from the main app's canned examples
-from clinical_trial_analysis_app import canned_examples
+# Import data from the statistics engine
+from statistics_engine.data import get_canned_example, between_factors_dict, repeated_factors_dict
 
 
 def main():
@@ -68,12 +68,13 @@ def main():
         if data_source == "Use Canned Example":
             model_type = st.selectbox(
                 "Select Example Dataset",
-                list(canned_examples.keys())
+                list(between_factors_dict.keys())
             )
             
             # Get data and description from canned examples
-            data = canned_examples[model_type]["data"]
-            description = canned_examples[model_type]["description"]
+            example = get_canned_example(model_type)
+            data = example["data"]
+            description = example["description"]
             
             # Display brief sample of the data
             st.write("Sample data:")
@@ -106,8 +107,9 @@ def main():
                 st.info("Please upload data or select a canned example.")
                 if 'data' not in locals():
                     model_type = "T-test"  # Default
-                    data = canned_examples[model_type]["data"]
-                    description = canned_examples[model_type]["description"]
+                    example = get_canned_example(model_type)
+                    data = example["data"]
+                    description = example["description"]
 
         # Visualization controls
         st.title("Visualization Options")

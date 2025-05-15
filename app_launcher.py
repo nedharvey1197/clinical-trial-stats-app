@@ -71,7 +71,7 @@ with col1:
     if st.button("Launch Analysis App", key="analysis"):
         st.success("Starting Clinical Trial Analysis App...")
         # Construct the path to the main application
-        script_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clinical_trial_analysis_app.py")
+        script_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "statistics_engine", "Clinical_trial_analysis_app_v1.py")
         # Stop the current app and start the main analysis app
         st.rerun()  # This will clear the current app state
         # Use sys.executable to ensure we use the same Python interpreter

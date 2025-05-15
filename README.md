@@ -43,7 +43,7 @@ Alternatively, you can directly run either the main analysis app or the interact
 
 ```bash
 # Run the main analysis app
-streamlit run clinical_trial_analysis_app.py
+streamlit run statistics_engine/Clinical_trial_analysis_app_v1.py
 
 # Run the interactive dashboard
 streamlit run interactive_dashboard.py
@@ -118,14 +118,16 @@ streamlit run interactive_dashboard.py
 ## File Structure
 
 - `app_launcher.py`: Entry point to choose which app to run
-- `clinical_trial_analysis_app.py`: Main Streamlit application
 - `interactive_dashboard.py`: Interactive data exploration dashboard
-- `models/`: Directory containing model-specific code
+- `statistics_engine/`: Core statistical functionality
+  - `Clinical_trial_analysis_app_v1.py`: Main Streamlit application
   - `base_models.py`: Core statistical models
-- `statistics_engine/`: Advanced statistical functionality
   - `enhanced_models.py`: Models with effect size calculations
   - `visualization.py`: Interactive visualization tools
   - `utils.py`: Utility functions for data processing
+  - `data.py`: Example datasets and data management
+  - `analysis.py`: Analysis orchestration
+  - `logic.py`: Statistical logic
 - `knowledge_dashboard/`: Sentinel knowledge integration
 - `requirements.txt`: Python package dependencies
 
