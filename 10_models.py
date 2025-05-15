@@ -1,7 +1,11 @@
 """
 Clinical Trial Statistical Analysis Module
+# base_models.py (add to docstring)
 
-This module provides a comprehensive suite of statistical analysis tools for clinical trial data.
+This class can be extended for additional functionality such as effect size calculations.
+See EnhancedClinicalTrialAnalysis in statistics_engine.modeling for an example.
+
+This module provides a comprehensive suite of core statistical analysis tools for clinical trial data.
 It supports various types of ANOVA designs, including:
 - One-way, Two-way, and Three-way ANOVA
 - Repeated Measures ANOVA
