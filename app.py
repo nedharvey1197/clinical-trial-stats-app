@@ -2,7 +2,7 @@ import streamlit as st
 
 # Set page config
 st.set_page_config(
-    page_title="HOME - Clinical Trial Statistics Suite",
+    page_title="Clinical Trial Statistics Suite",
     page_icon="🧪",
     layout="centered"
 )
@@ -34,12 +34,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def main():
-    st.markdown("<h1 class='header'>HOME</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Clinical Trial Statistics Suite</p>", unsafe_allow_html=True)
-
-    # Define app paths
-    main_app = "pages/01_Clinical_Trial_Analysis.py"
-    dashboard_app = "pages/02_Interactive_Dashboard.py"
+    st.markdown("<h1 class='header'>Clinical Trial Statistics Suite</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Choose an application from the sidebar or explore the features below</p>", unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
 
@@ -56,10 +52,6 @@ def main():
             </ul>
         </div>
         """, unsafe_allow_html=True)
-        
-        if st.button("Launch Clinical Trial Analysis App"):
-            with st.spinner("Starting Clinical Trial Analysis App..."):
-                st.switch_page(main_app)
 
     with col2:
         st.markdown("""
@@ -74,17 +66,13 @@ def main():
             </ul>
         </div>
         """, unsafe_allow_html=True)
-        
-        if st.button("Launch Interactive Dashboard"):
-            with st.spinner("Starting Interactive Dashboard..."):
-                st.switch_page(dashboard_app)
 
     st.markdown("---")
     st.markdown("""
     ### About the Suite
     This suite of applications provides comprehensive tools for analyzing clinical trial data. The **Clinical Trial Analysis App** focuses on robust statistical modeling and analysis, while the **Interactive Dashboard** offers dynamic visualization and exploration tools.
 
-    Both applications can work with the same data formats and share underlying statistical engines.
+    Both applications can work with the same data formats and share underlying statistical engines. Use the sidebar navigation to access these tools.
     """)
 
     # Footer

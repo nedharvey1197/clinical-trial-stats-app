@@ -6,12 +6,16 @@ import io
 import warnings
 import plotly.express as px
 import json
-from visualization import AdvancedVisualization
-from base_models import ClinicalTrialAnalysis
-from enhanced_models import EnhancedClinicalTrialAnalysis
+from lib.visualization import AdvancedVisualization
+from lib.base_models import ClinicalTrialAnalysis
+from lib.enhanced_models import EnhancedClinicalTrialAnalysis
 
 # Configure page
-st.set_page_config(page_title="Clinical Trial Interactive Dashboard", layout="wide")
+st.set_page_config(
+    page_title="Interactive Data Visualization", 
+    page_icon="📈",
+    layout="wide"
+)
 
 # Add custom CSS
 st.markdown("""
@@ -44,49 +48,98 @@ st.markdown("""
         font-size: 2em;
         margin-bottom: 1em;
     }
+    .sidebar-divider {
+        margin-top: 20px;
+        margin-bottom: 20px;
+        border-top: 1px solid #ddd;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # Import data from the statistics engine
-from data import get_canned_example, between_factors_dict, repeated_factors_dict
+from lib.data import get_canned_example, between_factors_dict, repeated_factors_dict
 
 
 def main():
     """Main function to run the dashboard app."""
-    st.markdown("<h1 class='dash-title'>Interactive Clinical Trial Data Explorer</h1>", unsafe_allow_html=True)
     
     # Initialize data variable to ensure it exists
     data = None
     model_type = "T-test"  # Default
     description = ""
     
-    # Sidebar for data selection and controls
+    # Sidebar for navigation and controls
     with st.sidebar:
-        st.title("Data Selection")
+        # Navigation Section
+        st.title("Navigation")
+        if st.button("← Return to App Launcher"):
+            st.switch_page("app_launcher.py")
+            
+        # Divider between navigation and page-specific controls
+        st.markdown("<div class='sidebar-divider'></div>", unsafe_allow_html=True)
         
-        # Data source options
-        data_source = st.radio(
-            "Choose Data Source",
-            ["Use Canned Example", "Upload Your Data"]
+        # Page-specific controls
+        st.title("Interactive Dashboard")
+        st.write("Explore and visualize clinical trial data.")
+    
+    # Main content
+    st.markdown("<h1 class='dash-title'>Interactive Clinical Trial Data Explorer</h1>", unsafe_allow_html=True)
+    
+    # Data selection section
+    st.header("Data Selection")
+    
+    # Data source options
+    data_source = st.radio(
+        "Choose Data Source",
+        ["Use Canned Example", "Upload Your Data"]
+    )
+    
+    if data_source == "Use Canned Example":
+        model_type = st.selectbox(
+            "Select Example Dataset",
+            list(between_factors_dict.keys())
         )
         
-        if data_source == "Use Canned Example":
-            model_type = st.selectbox(
-                "Select Example Dataset",
-                list(between_factors_dict.keys())
-            )
+        # Get data and description from canned examples
+        try:
+            example = get_canned_example(model_type)
+            data = example["data"]
+            description = example["description"]
             
-            # Get data and description from canned examples
+            # Display brief sample of the data
+            st.write("Sample data:")
+            st.dataframe(data.head(3))
+        except Exception as e:
+            st.error(f"Error loading example data: {str(e)}")
+            # Fallback to default data
+            data = pd.DataFrame({
+                'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
+                'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
+            })
+            description = "Default example data"
+        
+    else:  # Upload data
+        st.write("Upload a CSV file with your clinical trial data")
+        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+        
+        if uploaded_file is not None:
             try:
-                example = get_canned_example(model_type)
-                data = example["data"]
-                description = example["description"]
+                data = pd.read_csv(uploaded_file)
+                st.success("Data loaded successfully!")
                 
-                # Display brief sample of the data
+                # Display brief sample
                 st.write("Sample data:")
                 st.dataframe(data.head(3))
+                
+                # Ask for description
+                description = st.text_area(
+                    "Enter a brief description of your data (optional)",
+                    "Custom uploaded clinical trial data."
+                )
+                model_type = "Custom Data"
             except Exception as e:
-                st.error(f"Error loading example data: {str(e)}")
+                st.error(f"Error loading data: {str(e)}")
                 # Fallback to default data
                 data = pd.DataFrame({
                     'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -94,131 +147,102 @@ def main():
                     'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
                 })
                 description = "Default example data"
-            
-        else:  # Upload data
-            st.write("Upload a CSV file with your clinical trial data")
-            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-            
-            if uploaded_file is not None:
-                try:
-                    data = pd.read_csv(uploaded_file)
-                    st.success("Data loaded successfully!")
-                    
-                    # Display brief sample
-                    st.write("Sample data:")
-                    st.dataframe(data.head(3))
-                    
-                    # Ask for description
-                    description = st.text_area(
-                        "Enter a brief description of your data (optional)",
-                        "Custom uploaded clinical trial data."
-                    )
-                    model_type = "Custom Data"
-                except Exception as e:
-                    st.error(f"Error loading data: {str(e)}")
-                    # Fallback to default data
-                    data = pd.DataFrame({
-                        'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                        'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
-                        'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
-                    })
-                    description = "Default example data"
-            else:
-                # If no data uploaded, use default example
-                st.info("Please upload data or select a canned example.")
-                try:
-                    example = get_canned_example("T-test")  # Default
-                    data = example["data"]
-                    description = example["description"]
-                except Exception as e:
-                    # Fallback to default data
-                    data = pd.DataFrame({
-                        'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                        'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
-                        'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
-                    })
-                    description = "Default example data"
-
-        # Visualization controls
-        st.title("Visualization Options")
-        
-        # Get column names for selection
-        # Ensure data is defined before using it
-        if data is not None:
-            columns = data.columns.tolist()
-            
-            # Default to 'Outcome' if it exists, otherwise use first column that's not 'Subject'
-            default_outcome = "Outcome" if "Outcome" in columns else next((col for col in columns if col != "Subject"), columns[0])
-            default_outcome_index = columns.index(default_outcome) if default_outcome in columns else 0
-            
-            outcome_options = [col for col in columns if col != 'Subject']
-            if not outcome_options:
-                outcome_options = ["No outcome variable available"]
-                
-            outcome_var = st.selectbox(
-                "Select Outcome Variable",
-                outcome_options,
-                index=min(default_outcome_index, len(outcome_options)-1)
-            )
-            
-            # Create factor options list
-            factor_options = [col for col in columns if col not in [outcome_var, 'Subject']]
-            
-            if factor_options:
-                primary_factor = st.selectbox(
-                    "Select Primary Grouping Factor",
-                    factor_options,
-                    index=0
-                )
-                
-                secondary_factor_options = [col for col in factor_options if col != primary_factor]
-                if secondary_factor_options:
-                    secondary_factor = st.selectbox(
-                        "Select Secondary Factor (optional)",
-                        ["None"] + secondary_factor_options
-                    )
-                else:
-                    secondary_factor = "None"
-            else:
-                primary_factor = "None"
-                secondary_factor = "None"
-                
-            # Plot types
-            plot_types = st.multiselect(
-                "Select Visualizations to Display",
-                ["Box Plot", "Distribution Plot", "Q-Q Plot", "Interaction Plot", "Statistical Summary"],
-                default=["Box Plot", "Distribution Plot"]
-            )
-            
-            # Create Viz button
-            visualize_clicked = st.button("Generate Visualizations")
-            
-            # Statistical parameters
-            st.title("Statistical Options")
-            
-            show_advanced = st.checkbox("Show Advanced Statistics")
-            
-            if show_advanced:
-                alpha_level = st.slider(
-                    "Alpha Level (Significance)",
-                    min_value=0.01,
-                    max_value=0.10,
-                    value=0.05,
-                    step=0.01,
-                    format="%.2f"
-                )
-                
-                mcid_value = st.number_input(
-                    "Minimal Clinically Important Difference (MCID)",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.1
-                )
         else:
-            st.error("No data available. Please upload a file or select a canned example.")
-            visualize_clicked = False
+            # If no data uploaded, use default example
+            st.info("Please upload data or select a canned example.")
+            try:
+                example = get_canned_example("T-test")  # Default
+                data = example["data"]
+                description = example["description"]
+            except Exception as e:
+                # Fallback to default data
+                data = pd.DataFrame({
+                    'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                    'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
+                    'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
+                })
+                description = "Default example data"
+
+    # Visualization controls
+    st.header("Visualization Options")
     
-    # Main content area
+    # Get column names for selection
+    # Ensure data is defined before using it
+    if data is not None:
+        columns = data.columns.tolist()
+        
+        # Default to 'Outcome' if it exists, otherwise use first column that's not 'Subject'
+        default_outcome = "Outcome" if "Outcome" in columns else next((col for col in columns if col != "Subject"), columns[0])
+        default_outcome_index = columns.index(default_outcome) if default_outcome in columns else 0
+        
+        outcome_options = [col for col in columns if col != 'Subject']
+        if not outcome_options:
+            outcome_options = ["No outcome variable available"]
+            
+        outcome_var = st.selectbox(
+            "Select Outcome Variable",
+            outcome_options,
+            index=min(default_outcome_index, len(outcome_options)-1)
+        )
+        
+        # Create factor options list
+        factor_options = [col for col in columns if col not in [outcome_var, 'Subject']]
+        
+        if factor_options:
+            primary_factor = st.selectbox(
+                "Select Primary Grouping Factor",
+                factor_options,
+                index=0
+            )
+            
+            secondary_factor_options = [col for col in factor_options if col != primary_factor]
+            if secondary_factor_options:
+                secondary_factor = st.selectbox(
+                    "Select Secondary Factor (optional)",
+                    ["None"] + secondary_factor_options
+                )
+            else:
+                secondary_factor = "None"
+        else:
+            primary_factor = "None"
+            secondary_factor = "None"
+            
+        # Plot types
+        plot_types = st.multiselect(
+            "Select Visualizations to Display",
+            ["Box Plot", "Distribution Plot", "Q-Q Plot", "Interaction Plot", "Statistical Summary"],
+            default=["Box Plot", "Distribution Plot"]
+        )
+        
+        # Create Viz button
+        visualize_clicked = st.button("Generate Visualizations")
+        
+        # Statistical parameters
+        st.subheader("Statistical Options")
+        
+        show_advanced = st.checkbox("Show Advanced Statistics")
+        
+        if show_advanced:
+            alpha_level = st.slider(
+                "Alpha Level (Significance)",
+                min_value=0.01,
+                max_value=0.10,
+                value=0.05,
+                step=0.01,
+                format="%.2f"
+            )
+            
+            mcid_value = st.number_input(
+                "Minimal Clinically Important Difference (MCID)",
+                min_value=0.0,
+                value=0.0,
+                step=0.1
+            )
+    else:
+        st.error("No data available. Please upload a file or select a canned example.")
+        visualize_clicked = False
+    
+    # Main visualization area
     if data is not None and visualize_clicked:
         try:
             # Setup the visualization module
@@ -390,4 +414,4 @@ def main():
             st.info("Try selecting different variables or visualization types.")
 
 if __name__ == "__main__":
-    main() 
+    main()
