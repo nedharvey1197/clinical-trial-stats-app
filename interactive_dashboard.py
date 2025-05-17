@@ -6,9 +6,9 @@ import io
 import warnings
 import plotly.express as px
 import json
-from statistics_engine.visualization import AdvancedVisualization
-from statistics_engine.base_models import ClinicalTrialAnalysis
-from statistics_engine.enhanced_models import EnhancedClinicalTrialAnalysis
+from visualization import AdvancedVisualization
+from base_models import ClinicalTrialAnalysis
+from enhanced_models import EnhancedClinicalTrialAnalysis
 
 # Configure page
 st.set_page_config(page_title="Clinical Trial Interactive Dashboard", layout="wide")
@@ -48,12 +48,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Import data from the statistics engine
-from statistics_engine.data import get_canned_example, between_factors_dict, repeated_factors_dict
+from data import get_canned_example, between_factors_dict, repeated_factors_dict
 
 
 def main():
     """Main function to run the dashboard app."""
     st.markdown("<h1 class='dash-title'>Interactive Clinical Trial Data Explorer</h1>", unsafe_allow_html=True)
+    
+    # Initialize data variable to ensure it exists
+    data = None
+    model_type = "T-test"  # Default
+    description = ""
     
     # Sidebar for data selection and controls
     with st.sidebar:
@@ -72,13 +77,23 @@ def main():
             )
             
             # Get data and description from canned examples
-            example = get_canned_example(model_type)
-            data = example["data"]
-            description = example["description"]
-            
-            # Display brief sample of the data
-            st.write("Sample data:")
-            st.dataframe(data.head(3))
+            try:
+                example = get_canned_example(model_type)
+                data = example["data"]
+                description = example["description"]
+                
+                # Display brief sample of the data
+                st.write("Sample data:")
+                st.dataframe(data.head(3))
+            except Exception as e:
+                st.error(f"Error loading example data: {str(e)}")
+                # Fallback to default data
+                data = pd.DataFrame({
+                    'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                    'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
+                    'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
+                })
+                description = "Default example data"
             
         else:  # Upload data
             st.write("Upload a CSV file with your clinical trial data")
@@ -101,29 +116,52 @@ def main():
                     model_type = "Custom Data"
                 except Exception as e:
                     st.error(f"Error loading data: {str(e)}")
-                    return
+                    # Fallback to default data
+                    data = pd.DataFrame({
+                        'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                        'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
+                        'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
+                    })
+                    description = "Default example data"
             else:
                 # If no data uploaded, use default example
                 st.info("Please upload data or select a canned example.")
-                if 'data' not in locals():
-                    model_type = "T-test"  # Default
-                    example = get_canned_example(model_type)
+                try:
+                    example = get_canned_example("T-test")  # Default
                     data = example["data"]
                     description = example["description"]
+                except Exception as e:
+                    # Fallback to default data
+                    data = pd.DataFrame({
+                        'Subject': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                        'Drug': ['A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B'],
+                        'Outcome': [120, 115, 110, 105, 100, 130, 125, 120, 115, 110]
+                    })
+                    description = "Default example data"
 
         # Visualization controls
         st.title("Visualization Options")
         
         # Get column names for selection
-        if 'data' in locals():
+        # Ensure data is defined before using it
+        if data is not None:
             columns = data.columns.tolist()
             
+            # Default to 'Outcome' if it exists, otherwise use first column that's not 'Subject'
+            default_outcome = "Outcome" if "Outcome" in columns else next((col for col in columns if col != "Subject"), columns[0])
+            default_outcome_index = columns.index(default_outcome) if default_outcome in columns else 0
+            
+            outcome_options = [col for col in columns if col != 'Subject']
+            if not outcome_options:
+                outcome_options = ["No outcome variable available"]
+                
             outcome_var = st.selectbox(
                 "Select Outcome Variable",
-                [col for col in columns if col not in ['Subject']],
-                index=columns.index("Outcome") if "Outcome" in columns else 0
+                outcome_options,
+                index=min(default_outcome_index, len(outcome_options)-1)
             )
             
+            # Create factor options list
             factor_options = [col for col in columns if col not in [outcome_var, 'Subject']]
             
             if factor_options:
@@ -176,219 +214,180 @@ def main():
                     value=0.0,
                     step=0.1
                 )
+        else:
+            st.error("No data available. Please upload a file or select a canned example.")
+            visualize_clicked = False
     
     # Main content area
-    if 'data' in locals() and visualize_clicked:
-        # Setup the visualization module
-        viz = AdvancedVisualization(data)
-        
-        # Determine layout based on number of plots
-        col1, col2 = st.columns(2)
-        
-        # Title and description
-        st.markdown(f"## Analysis of {model_type} Data")
-        st.markdown(f"<div class='insight-box'>{description}</div>", unsafe_allow_html=True)
-        
-        # Data summary
-        st.markdown("### Dataset Summary")
-        st.write(f"Number of observations: {len(data)}")
-        
-        # Create viz based on selections
-        if "Box Plot" in plot_types:
-            with col1:
-                st.markdown("### Box Plot")
-                if primary_factor != "None":
-                    factors = [primary_factor]
-                    if secondary_factor != "None":
-                        factors.append(secondary_factor)
-                    fig = viz.create_interactive_boxplot(
-                        outcome_var,
-                        factors,
-                        secondary_factor if secondary_factor != "None" else None
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Box plot requires at least one grouping factor.")
-                    
-        if "Distribution Plot" in plot_types:
-            with col2:
-                st.markdown("### Distribution Plot")
-                fig = viz.create_distribution_plot(
-                    outcome_var,
-                    primary_factor if primary_factor != "None" else None
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-        if "Q-Q Plot" in plot_types:
-            with col1:
-                st.markdown("### Q-Q Plot (Normality Check)")
-                fig = viz.create_qq_plot(
-                    outcome_var,
-                    primary_factor if primary_factor != "None" else None
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-        if "Interaction Plot" in plot_types and primary_factor != "None" and secondary_factor != "None":
-            with col2:
-                st.markdown("### Interaction Plot")
-                fig = viz.create_interactive_interaction_plot(
-                    outcome_var,
-                    primary_factor,
-                    secondary_factor
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-        if "Statistical Summary" in plot_types:
-            st.markdown("### Statistical Analysis")
+    if data is not None and visualize_clicked:
+        try:
+            # Setup the visualization module
+            viz = AdvancedVisualization(data)
             
-            # Run the analysis using the enhanced model if requested
-            if show_advanced and mcid_value > 0:
-                analyzer = EnhancedClinicalTrialAnalysis(data, mcid=mcid_value)
-            else:
-                analyzer = ClinicalTrialAnalysis(data)
+            # Determine layout based on number of plots
+            col1, col2 = st.columns(2)
             
-            # Determine factors for analysis
-            between_factors = []
-            repeated_factors = []
+            # Title and description
+            st.markdown(f"## Analysis of {model_type} Data")
+            st.markdown(f"<div class='insight-box'>{description}</div>", unsafe_allow_html=True)
             
-            if primary_factor != "None":
-                between_factors.append(primary_factor)
-            if secondary_factor != "None":
-                # Simplified approach - assume second factor is between
-                between_factors.append(secondary_factor)
+            # Data summary
+            st.markdown("### Dataset Summary")
+            st.write(f"Number of observations: {len(data)}")
             
-            # For repeated measures, would need more logic here
-            if 'Time' in data.columns:
-                repeated_factors.append('Time')
-                
-            # Capture warnings during analysis
-            warning_buffer = io.StringIO()
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                
-                # Run appropriate analysis based on model type and factors
-                if len(between_factors) == 1 and len(repeated_factors) == 0:
-                    if len(data[between_factors[0]].unique()) == 2:
-                        # Two groups - run t-test
-                        run_model = "T-test"
+            # Create viz based on selections
+            if "Box Plot" in plot_types:
+                with col1:
+                    st.markdown("### Box Plot")
+                    if primary_factor != "None":
+                        try:
+                            fig = viz.create_interactive_boxplot(outcome_var, [primary_factor], secondary_factor if secondary_factor != "None" else None)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Add statistical insights
+                            if show_advanced and primary_factor != "None":
+                                st.markdown("#### Statistical Insights")
+                                group_stats = data.groupby(primary_factor)[outcome_var].agg(['mean', 'std', 'count']).reset_index()
+                                st.dataframe(group_stats.round(2))
+                        except Exception as e:
+                            st.error(f"Error creating box plot: {str(e)}")
                     else:
-                        # More than two groups - run one-way ANOVA
-                        run_model = "One-way ANOVA"
-                elif len(between_factors) == 2 and len(repeated_factors) == 0:
-                    run_model = "Two-way ANOVA"
-                elif len(between_factors) == 1 and len(repeated_factors) == 1:
-                    run_model = "Mixed ANOVA (One Between, One Repeated)"
-                else:
-                    # For demo, default to model_type from data source
-                    run_model = model_type
-                
-                try:
-                    results = analyzer.run_analysis(run_model, outcome_var, between_factors, repeated_factors)
-                    
-                    # Process warnings
-                    for warn in w:
-                        if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning,)):
-                            warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n\n")
-                            
-                    # Display results
-                    st.write(f"Analysis performed: **{run_model}**")
-                    
-                    # Show statistical test results
-                    if run_model == "T-test" and 'T-test' in results:
-                        st.write(f"T-value: {results['T-test']['t_stat']:.4f}, p-value: {results['T-test']['p_value']:.4f}")
-                        if results['T-test']['p_value'] < (alpha_level if show_advanced else 0.05):
-                            st.success("Statistically significant difference found.")
-                        else:
-                            st.info("No statistically significant difference found.")
-                    elif "ANOVA" in results:
-                        st.subheader("ANOVA Results")
-                        st.dataframe(results["ANOVA"])
-                        
-                    # Show effect sizes if available (from enhanced model)
-                    if 'Effect Sizes' in results:
-                        st.subheader("Effect Sizes")
-                        for key, value in results['Effect Sizes'].items():
-                            st.write(f"**{key}:** {value}")
-                            
-                    # Assumptions
-                    st.subheader("Statistical Assumptions")
-                    for key, value in results['Assumptions'].items():
-                        if isinstance(value, tuple):
-                            st.write(f"**{key}:** statistic = {value[0]:.4f}, p-value = {value[1]:.4f}")
-                            if key == "Shapiro-Wilk" and value[1] < 0.05:
-                                st.warning("Normality assumption may be violated. Consider non-parametric alternatives.")
-                            elif key == "Levene" and value[1] < 0.05:
-                                st.warning("Equal variance assumption may be violated. Consider robust methods.")
-                        else:
-                            st.write(f"**{key}:** {value}")
-                            
-                    # Display Descriptive Statistics
-                    st.subheader("Descriptive Statistics")
-                    st.dataframe(results["Descriptive Stats"])
-                    
-                    # Display LS Means
-                    st.subheader("LS Means")
-                    st.dataframe(results["LS Means"])
-                    
-                    # Display LS Means Plot
-                    st.pyplot(results["LS Means Plot"])
-                    
-                    # Display warnings
-                    warnings_text = warning_buffer.getvalue()
-                    if warnings_text:
-                        st.subheader("Analysis Warnings")
-                        st.markdown(
-                            f'<div style="background:#fff3cd; color:#856404; border:1px solid #ffeeba; '
-                            f'border-radius:8px; padding:1em; margin:1em 0;">'
-                            f'<strong>Statistical Warnings:</strong><br><pre style="white-space:pre-wrap;">{warnings_text}\n</pre>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-                        
-                except Exception as e:
-                    st.error(f"Error during analysis: {str(e)}")
-                    st.markdown(
-                        f'<div style="background:#f8d7da; color:#721c24; border:1px solid #f5c6cb; '
-                        f'border-radius:8px; padding:1em; margin:1em 0;">'
-                        f'<strong>Analysis Error:</strong><br>{str(e)}'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-        
-        # Download options
-        st.markdown("### Download Options")
-        
-        # Create CSV of the data
-        csv_data = data.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="Download Data as CSV",
-            data=csv_data,
-            file_name=f"{model_type.replace(' ', '_')}_data.csv",
-            mime="text/csv",
-        )
-        
-        # Create a JSON of the visualization settings
-        viz_settings = {
-            "model_type": model_type,
-            "outcome_variable": outcome_var,
-            "primary_factor": primary_factor,
-            "secondary_factor": secondary_factor,
-            "plot_types": plot_types,
-            "show_advanced": show_advanced
-        }
-        
-        if show_advanced:
-            viz_settings["alpha_level"] = alpha_level
-            viz_settings["mcid_value"] = mcid_value
+                        st.info("Box plot requires at least one grouping factor")
             
-        viz_json = json.dumps(viz_settings, indent=2)
-        st.download_button(
-            label="Download Visualization Settings (JSON)",
-            data=viz_json,
-            file_name=f"{model_type.replace(' ', '_')}_viz_settings.json",
-            mime="application/json",
-        )
+            if "Distribution Plot" in plot_types:
+                with col2:
+                    st.markdown("### Distribution Plot")
+                    if primary_factor != "None":
+                        try:
+                            fig = viz.create_distribution_plot(outcome_var, primary_factor)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Add statistical insights
+                            if show_advanced:
+                                st.markdown("#### Normality Test")
+                                normality_results = viz.test_normality(outcome_var, primary_factor)
+                                st.dataframe(normality_results)
+                        except Exception as e:
+                            st.error(f"Error creating distribution plot: {str(e)}")
+                    else:
+                        try:
+                            fig = viz.create_distribution_plot(outcome_var)
+                            st.plotly_chart(fig, use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Error creating distribution plot: {str(e)}")
+            
+            if "Q-Q Plot" in plot_types:
+                with col1:
+                    st.markdown("### Q-Q Plot")
+                    if primary_factor != "None":
+                        figs = viz.create_qq_plot(outcome_var, primary_factor)
+                        for i, (group, fig) in enumerate(figs.items()):
+                            st.subheader(f"Q-Q Plot for {group}")
+                            st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        fig = viz.create_qq_plot(outcome_var)
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            if "Interaction Plot" in plot_types and secondary_factor != "None":
+                with col2:
+                    st.markdown("### Interaction Plot")
+                    try:
+                        fig = viz.create_interactive_interaction_plot(outcome_var, primary_factor, secondary_factor)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        if show_advanced:
+                            st.markdown("#### Interaction Effect")
+                            interaction_results = viz.test_interaction(outcome_var, primary_factor, secondary_factor)
+                            st.write(f"Interaction F-value: {interaction_results['F']:.2f}, p-value: {interaction_results['p']:.4f}")
+                            if interaction_results['p'] < alpha_level:
+                                st.markdown("**Significant interaction detected**")
+                            else:
+                                st.markdown("No significant interaction detected")
+                    except Exception as e:
+                        st.error(f"Error creating interaction plot: {str(e)}")
+            
+            if "Statistical Summary" in plot_types:
+                st.markdown("### Statistical Summary")
+                if primary_factor != "None":
+                    analysis = EnhancedClinicalTrialAnalysis(data, mcid_value if mcid_value > 0 else None)
+                    
+                    if secondary_factor != "None":
+                        model_type = "Two-way ANOVA"
+                        results = analysis.run_analysis(model_type, outcome_var, [primary_factor, secondary_factor])
+                    else:
+                        if len(data[primary_factor].unique()) == 2:
+                            model_type = "T-test"
+                        else:
+                            model_type = "One-way ANOVA"
+                        results = analysis.run_analysis(model_type, outcome_var, [primary_factor])
+                    
+                    # Display results
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### Main Effects")
+                        if "ANOVA" in results:
+                            st.dataframe(results["ANOVA"])
+                        elif "T-test" in results:
+                            st.write(f"T-statistic: {results['T-test']['t_stat']:.2f}")
+                            st.write(f"P-value: {results['T-test']['p_value']:.4f}")
+                            sig = results['T-test']['p_value'] < alpha_level
+                            st.markdown(f"**Significant difference: {sig}**")
+                    
+                    with col2:
+                        st.markdown("#### Effect Sizes")
+                        if "Effect Sizes" in results:
+                            for k, v in results["Effect Sizes"].items():
+                                if isinstance(v, float):
+                                    st.write(f"{k}: {v:.4f}")
+                                else:
+                                    st.write(f"{k}: {v}")
+                            
+                            if "Clinical Significance" in results["Effect Sizes"]:
+                                is_clinical = "significant" in results["Effect Sizes"]["Clinical Significance"].lower()
+                                if is_clinical:
+                                    st.markdown("✅ **Clinically Significant**")
+                                else:
+                                    st.markdown("❌ **Not Clinically Significant**")
+                else:
+                    st.info("Statistical analysis requires at least one grouping factor")
+            
+            # Add download capability
+            if data is not None:
+                # Save settings as JSON
+                settings = {
+                    "model_type": model_type,
+                    "primary_factor": primary_factor,
+                    "secondary_factor": secondary_factor,
+                    "outcome_var": outcome_var,
+                    "plot_types": plot_types,
+                    "alpha_level": alpha_level if 'alpha_level' in locals() else 0.05,
+                    "mcid_value": mcid_value if 'mcid_value' in locals() else 0.0
+                }
+                
+                settings_json = json.dumps(settings, indent=2)
+                
+                st.markdown("### Export")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.download_button(
+                        label="Download Data (CSV)",
+                        data=data.to_csv(index=False),
+                        file_name=f"clinical_trial_data_{model_type.replace(' ', '_')}.csv",
+                        mime="text/csv"
+                    )
+                
+                with col2:
+                    st.download_button(
+                        label="Download Settings (JSON)",
+                        data=settings_json,
+                        file_name=f"visualization_settings_{model_type.replace(' ', '_')}.json",
+                        mime="application/json"
+                    )
+        except Exception as e:
+            st.error(f"An error occurred while generating visualizations: {str(e)}")
+            st.info("Try selecting different variables or visualization types.")
 
-# Run the app
 if __name__ == "__main__":
     main() 
