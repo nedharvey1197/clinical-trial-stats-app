@@ -1,7 +1,6 @@
 import streamlit as st
-import subprocess
 import os
-import sys
+import subprocess
 
 st.set_page_config(
     page_title="Clinical Trial Stats App Launcher",
@@ -22,20 +21,6 @@ st.markdown("""
     .app-card:hover {
         transform: scale(1.01);
     }
-    .launch-btn {
-        background-color: #1976d2;
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 20px;
-        cursor: pointer;
-        font-weight: bold;
-        margin-top: 10px;
-        width: 100%;
-    }
-    .launch-btn:hover {
-        background-color: #1565c0;
-    }
     .header {
         text-align: center;
         margin-bottom: 40px;
@@ -52,31 +37,41 @@ st.markdown("""
 st.markdown("<h1 class='header'>Clinical Trial Statistics Suite</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtitle'>Choose an application to launch</p>", unsafe_allow_html=True)
 
+# Define app paths
+main_app = "Clinical_trial_analysis_app_v1.py"
+dashboard_app = "interactive_dashboard.py"
+
+# Simple function to launch an app
+def launch_app(app_path):
+    try:
+        # Just run the app and let Streamlit handle everything else
+        subprocess.Popen(["streamlit", "run", app_path])
+        return True
+    except Exception as e:
+        st.error(f"Error launching app: {str(e)}")
+        return False
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("""
     <div class='app-card'>
-        <h3>📊 Clinical Trial Analysis App</h3>
-        <p>The main application for analyzing clinical trial data with various statistical models.</p>
+        <h3>📊 Statistical Models for Clinical Trials</h3>
+        <p>Explore the most common models for analyzing clinical trial data.  Use the examples or upload your own data.</p>
         <ul>
-            <li>Comprehensive statistical analysis</li>
-            <li>Multiple statistical models</li>
+            <li>Comprehensive suite of statistical models</li>
+            <li>Real world examples of trial designs, with mock data</li>
             <li>Data import and export</li>
             <li>Static visualizations</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("Launch Analysis App", key="analysis"):
-        st.success("Starting Clinical Trial Analysis App...")
-        # Construct the path to the main application
-        script_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "statistics_engine", "Clinical_trial_analysis_app_v1.py")
-        # Stop the current app and start the main analysis app
-        st.rerun()  # This will clear the current app state
-        # Use sys.executable to ensure we use the same Python interpreter
-        subprocess.Popen([sys.executable, "-m", "streamlit", "run", script_path])
-        st.stop()
+    if st.button("Launch Clinical Trial Analysis App"):
+        with st.spinner("Starting Clinical Trial Analysis App..."):
+            success = launch_app(main_app)
+            if success:
+                st.success("App launched! A new browser tab should open automatically.")
 
 with col2:
     st.markdown("""
@@ -92,15 +87,11 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("Launch Dashboard", key="dashboard"):
-        st.success("Starting Interactive Dashboard...")
-        # Construct the path to the dashboard
-        script_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "interactive_dashboard.py")
-        # Stop the current app and start the dashboard
-        st.rerun()  # This will clear the current app state
-        # Use sys.executable to ensure we use the same Python interpreter
-        subprocess.Popen([sys.executable, "-m", "streamlit", "run", script_path])
-        st.stop()
+    if st.button("Launch Interactive Dashboard"):
+        with st.spinner("Starting Interactive Dashboard..."):
+            success = launch_app(dashboard_app)
+            if success:
+                st.success("App launched! A new browser tab should open automatically.")
 
 st.markdown("---")
 st.markdown("""

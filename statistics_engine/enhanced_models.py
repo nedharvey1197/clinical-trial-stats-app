@@ -1,5 +1,5 @@
 # statistics_engine/modeling.py
-from models.base_models import ClinicalTrialAnalysis
+from base_models import ClinicalTrialAnalysis
 import pingouin as pg  # Fixed import for pingouin
 import numpy as np
 import pandas as pd
@@ -78,7 +78,8 @@ class EnhancedClinicalTrialAnalysis(ClinicalTrialAnalysis):
                 
             try:
                 effect_sizes['Cohen\'s d'] = pg.compute_effsize(group1_data, group2_data, eftype='cohen')
-                logger.info(f"Cohen's d effect size: {effect_sizes['Cohen\'s d']:.4f}")
+                key = "Cohen's d"
+                logger.info(f"Cohen's d effect size: {effect_sizes[key]:.4f}")
                 
                 # Clinical significance assessment
                 if self.mcid is not None:

@@ -473,4 +473,154 @@ class AdvancedVisualization:
         fig.update_yaxes(title_text="Residuals", row=2, col=2)
         
         logger.info("Residual plots created successfully")
-        return fig 
+        return fig
+
+    def test_normality(self, outcome: str, group_by: Optional[str] = None) -> pd.DataFrame:
+        """
+        Perform normality tests on the outcome variable.
+        
+        Args:
+            outcome (str): Outcome variable to test.
+            group_by (str, optional): Group to test by.
+            
+        Returns:
+            pd.DataFrame: Results of normality tests.
+        """
+        logger.info(f"Testing normality for {outcome}, grouped by {group_by}")
+        
+        if self.data is None:
+            logger.error("No data available for visualization")
+            raise ValueError("No data set for visualization. Use set_data() first.")
+            
+        results = []
+        
+        if group_by is not None:
+            for group_val in sorted(self.data[group_by].unique()):
+                group_data = self.data[self.data[group_by] == group_val][outcome].dropna()
+                
+                if len(group_data) >= 3:  # Need at least 3 points for some tests
+                    # Shapiro-Wilk test
+                    shapiro_stat, shapiro_p = stats.shapiro(group_data)
+                    
+                    # D'Agostino's K^2 test
+                    k2_stat, k2_p = stats.normaltest(group_data)
+                    
+                    # Anderson-Darling test
+                    anderson_result = stats.anderson(group_data, dist='norm')
+                    # Get p-value from critical values
+                    anderson_p = 0.05  # Approximate
+                    
+                    results.append({
+                        'Group': f"{group_by}={group_val}",
+                        'n': len(group_data),
+                        'Shapiro-Wilk_stat': shapiro_stat,
+                        'Shapiro-Wilk_p': shapiro_p,
+                        'Normal (p>0.05)': shapiro_p > 0.05,
+                        'K2_stat': k2_stat,
+                        'K2_p': k2_p,
+                        'Anderson_stat': anderson_result.statistic
+                    })
+                else:
+                    results.append({
+                        'Group': f"{group_by}={group_val}",
+                        'n': len(group_data),
+                        'Shapiro-Wilk_stat': None,
+                        'Shapiro-Wilk_p': None,
+                        'Normal (p>0.05)': None,
+                        'K2_stat': None,
+                        'K2_p': None,
+                        'Anderson_stat': None
+                    })
+        else:
+            data_values = self.data[outcome].dropna()
+            
+            if len(data_values) >= 3:
+                # Shapiro-Wilk test
+                shapiro_stat, shapiro_p = stats.shapiro(data_values)
+                
+                # D'Agostino's K^2 test
+                k2_stat, k2_p = stats.normaltest(data_values)
+                
+                # Anderson-Darling test
+                anderson_result = stats.anderson(data_values, dist='norm')
+                
+                results.append({
+                    'Group': 'All Data',
+                    'n': len(data_values),
+                    'Shapiro-Wilk_stat': shapiro_stat,
+                    'Shapiro-Wilk_p': shapiro_p,
+                    'Normal (p>0.05)': shapiro_p > 0.05,
+                    'K2_stat': k2_stat,
+                    'K2_p': k2_p,
+                    'Anderson_stat': anderson_result.statistic
+                })
+            else:
+                results.append({
+                    'Group': 'All Data',
+                    'n': len(data_values),
+                    'Shapiro-Wilk_stat': None,
+                    'Shapiro-Wilk_p': None,
+                    'Normal (p>0.05)': None,
+                    'K2_stat': None,
+                    'K2_p': None,
+                    'Anderson_stat': None
+                })
+                
+        logger.info("Normality test completed")
+        return pd.DataFrame(results)
+    
+    def test_interaction(self, outcome: str, factor1: str, factor2: str) -> dict:
+        """
+        Test for interaction effects between two factors.
+        
+        Args:
+            outcome (str): Outcome variable.
+            factor1 (str): First factor.
+            factor2 (str): Second factor.
+            
+        Returns:
+            dict: Results of interaction test.
+        """
+        logger.info(f"Testing interaction between {factor1} and {factor2} for {outcome}")
+        
+        if self.data is None:
+            logger.error("No data available for visualization")
+            raise ValueError("No data set for visualization. Use set_data() first.")
+            
+        try:
+            # Fit a two-way ANOVA model with interaction
+            formula = f"{outcome} ~ C({factor1}) * C({factor2})"
+            from statsmodels.formula.api import ols
+            import statsmodels.api as sm
+            
+            model = ols(formula, data=self.data).fit()
+            anova_table = sm.stats.anova_lm(model, typ=2)
+            
+            # Extract interaction term
+            interaction_term = f"C({factor1}):C({factor2})"
+            
+            if interaction_term in anova_table.index:
+                F_value = anova_table.loc[interaction_term, 'F']
+                p_value = anova_table.loc[interaction_term, 'PR(>F)']
+                
+                return {
+                    'F': F_value,
+                    'p': p_value,
+                    'significant': p_value < 0.05
+                }
+            else:
+                logger.warning(f"Interaction term {interaction_term} not found in ANOVA table")
+                return {
+                    'F': 0,
+                    'p': 1.0,
+                    'significant': False,
+                    'error': 'Interaction term not found'
+                }
+        except Exception as e:
+            logger.error(f"Error testing interaction: {str(e)}")
+            return {
+                'F': 0,
+                'p': 1.0,
+                'significant': False,
+                'error': str(e)
+            } 

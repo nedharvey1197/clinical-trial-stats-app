@@ -1,9 +1,9 @@
 import pandas as pd
 import streamlit as st
-from statistics_engine.analysis import AnalysisOrchestrator
-from statistics_engine.data import get_canned_example, between_factors_dict, repeated_factors_dict
-from ui.components import display_progress, display_result_section, display_explanation, toggle_outputs
-from ui.explanations import get_explanation
+from analysis import AnalysisOrchestrator
+from data import get_canned_example, between_factors_dict, repeated_factors_dict
+from ui_components import display_progress, display_result_section, display_explanation, toggle_outputs
+from ui_explanations import get_explanation
 import warnings
 import io
 from datetime import datetime
@@ -50,7 +50,7 @@ with st.sidebar:
 
     # Step 1: Model Selection
     st.header("Step 1: Select Model")
-    display_progress(1, 4)
+    display_progress(1, 3)
     models = list(between_factors_dict.keys())
     model_type = st.selectbox(
         "Choose a model to analyze your data:",
@@ -77,14 +77,119 @@ with st.sidebar:
         help="Check this to run the example immediately after selecting a model."
     )
 
-    # Step 2: Data Input Method
-    st.header("Step 2: Choose Data Input")
-    display_progress(2, 4)
+    # Analyze Your Own Data (Combines Step 2 and Step 4)
+    st.header("Analyze Your Own Data (Optional)")
+    # Step 2: Choose Data Input Method
     data_option = st.radio(
         "Data Input Method",
         ["Use Canned Example", "Upload CSV", "Manual Entry"],
         help="Choose to run a preloaded example, upload your own data, or enter data manually."
     )
+
+    # Initialize data as None
+    custom_data = None  # Renamed to avoid conflict with canned example data
+    if data_option == "Upload CSV":
+        st.write("Upload a CSV file with columns: Subject, Outcome, and relevant factors (e.g., Drug, Time).")
+        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+        if uploaded_file:
+            try:
+                custom_data = pd.read_csv(uploaded_file)
+                st.write("Uploaded Data:")
+                st.dataframe(custom_data)
+                between_factors = st.text_input(
+                    f"Between-subjects factors for {model_type} (comma-separated, e.g., Drug,Age)",
+                    ",".join(between_factors)
+                ).split(",")
+                between_factors = [f.strip() for f in between_factors if f.strip()]
+                repeated_factors = st.text_input(
+                    f"Repeated-measures factors for {model_type} (comma-separated, e.g., Time)",
+                    ",".join(repeated_factors)
+                ).split(",")
+                repeated_factors = [f.strip() for f in repeated_factors if f.strip()]
+            except Exception as e:
+                st.error(f"Error loading CSV: {str(e)}")
+
+    elif data_option == "Manual Entry":
+        st.write("Enter data for each group.")
+        num_groups = st.number_input("Number of groups", min_value=1, value=2, step=1)
+        between_factors = st.text_input(
+            f"Between-subjects factors for {model_type} (comma-separated, e.g., Drug,Age)",
+            ",".join(between_factors)
+        ).split(",")
+        between_factors = [f.strip() for f in between_factors if f.strip()]
+        repeated_factors = st.text_input(
+            f"Repeated-measures factors for {model_type} (comma-separated, e.g., Time)",
+            ",".join(repeated_factors)
+        ).split(",")
+        repeated_factors = [f.strip() for f in repeated_factors if f.strip()]
+
+        data_dict = {'Subject': [], 'Outcome': []}
+        for factor in between_factors + repeated_factors:
+            data_dict[factor] = []
+
+        subject_id = 1
+        for group in range(num_groups):
+            group_name = st.text_input(f"Name of group {group+1} (e.g., DrugA)", f"Group{group+1}")
+            num_subjects = st.number_input(
+                f"Number of subjects in {group_name}",
+                min_value=1,
+                value=5,
+                step=1,
+                key=f"subjects_{group}"
+            )
+            for s in range(num_subjects):
+                for t in range(len(repeated_factors) if repeated_factors else 1):
+                    outcome = st.number_input(
+                        f"Outcome for subject {s+1} in {group_name}" + (f" at {repeated_factors[0]} {t+1}" if repeated_factors else ""),
+                        value=100.0,
+                        step=1.0,
+                        key=f"outcome_{group}_{s}_{t}"
+                    )
+                    data_dict['Subject'].append(subject_id)
+                    data_dict['Outcome'].append(outcome)
+                    for factor in between_factors:
+                        if factor == between_factors[0]:
+                            data_dict[factor].append(group_name)
+                        else:
+                            data_dict[factor].append(
+                                st.text_input(
+                                    f"{factor} for subject {s+1} in {group_name}",
+                                    "Value",
+                                    key=f"{factor}_{group}_{s}"
+                                )
+                            )
+                    for i, factor in enumerate(repeated_factors):
+                        data_dict[factor].append(t + 1)
+                subject_id += 1
+
+        if st.button("Submit Data"):
+            try:
+                custom_data = pd.DataFrame(data_dict)
+                st.write("Entered Data:")
+                st.dataframe(custom_data)
+            except Exception as e:
+                st.error(f"Error processing manual data: {str(e)}")
+
+    # Analysis Settings Form (Moved from Step 4)
+    with st.form(key="analysis_settings_form"):
+        st.subheader("Run Your Analysis")
+        imputation_method = st.selectbox(
+            "Imputation Method for Missing Values",
+            options=["mean", "median", "none"],
+            help="Choose how to handle missing values in the Outcome column. 'none' will skip imputation."
+        )
+        submit_button = st.form_submit_button(
+            label="Run Analysis with Custom Data",
+            disabled=custom_data is None
+        )
+
+    if custom_data is None and data_option != "Use Canned Example":
+        st.info("Please upload a CSV file or submit manual data to enable the analysis.")
+
+    # Visibility Toggles for Custom Data Results
+    st.subheader("Customize Your Results")
+    st.write("Choose which results to display after running the analysis:")
+    show_descriptive, show_ls_means, show_plot = toggle_outputs()
 
 # Main Content and Explanation Columns
 main_col, explain_col = st.columns([2, 1])
@@ -107,7 +212,7 @@ with main_col:
 with explain_col:
     st.header("Explanation")
     if model_type:
-        display_explanation("Data Input", get_explanation("data_input", model_type))
+        display_explanation("Data Input", get_explanation("data_input", model_type, results=None, quality_report=None))
     else:
         st.markdown('<div class="explanation-bubble">No model selected. Please select a model to see the explanation.</div>', unsafe_allow_html=True)
 
@@ -151,9 +256,6 @@ if model_type:
 
 # Display Canned Example Results
 if results is not None:
-    # Toggle Outputs
-    show_descriptive, show_ls_means, show_plot = toggle_outputs()
-
     with main_col:
         # Data Quality Report
         st.write("**Data Quality Report:**")
@@ -171,38 +273,36 @@ if results is not None:
         )
 
     with explain_col:
-        display_explanation("Assumption Checks", get_explanation("assumption_checks", model_type))
+        display_explanation("Assumption Checks", get_explanation("assumption_checks", model_type, results, quality_report))
 
     with main_col:
         # Descriptive Statistics
-        if show_descriptive:
-            display_result_section(
-                "Descriptive Statistics",
-                results['Descriptive Stats'],
-                "Download Descriptive Stats (CSV)",
-                results['Exports']['Descriptive Stats CSV'],
-                "text/csv",
-                "descriptive_stats"
-            )
+        display_result_section(
+            "Descriptive Statistics",
+            results['Descriptive Stats'],
+            "Download Descriptive Stats (CSV)",
+            results['Exports']['Descriptive Stats CSV'],
+            "text/csv",
+            "descriptive_stats"
+        )
 
         # LS Means
-        if show_ls_means:
-            display_result_section(
-                "LS Means Table",
-                results['LS Means'],
-                "Download LS Means (CSV)",
-                results['Exports']['LS Means CSV'],
-                "text/csv",
-                "ls_means"
-            )
-            display_result_section(
-                "LS Means Plot",
-                results['LS Means Plot'],
-                "Download LS Means Plot (PNG)",
-                results['Exports']['LS Means Plot PNG'],
-                "image/png",
-                "ls_means_plot"
-            )
+        display_result_section(
+            "LS Means Table",
+            results['LS Means'],
+            "Download LS Means (CSV)",
+            results['Exports']['LS Means CSV'],
+            "text/csv",
+            "ls_means"
+        )
+        display_result_section(
+            "LS Means Plot",
+            results['LS Means Plot'],
+            "Download LS Means Plot (PNG)",
+            results['Exports']['LS Means Plot PNG'],
+            "image/png",
+            "ls_means_plot"
+        )
 
         # Expected Mean Squares
         if results['Expected Mean Squares'].size > 0:
@@ -248,25 +348,20 @@ if results is not None:
         st.write("**Effect Sizes:**")
         st.write(results['Effect Sizes'])
 
-    with explain_col:
-        display_explanation("Results", get_explanation("results", model_type))
-
-    with main_col:
         # Visualization
-        if show_plot:
-            display_result_section(
-                "Box/Interaction Plot",
-                results['Plot'],
-                "Download Plot (PNG)",
-                results['Exports']['Plot PNG'],
-                "image/png",
-                "plot"
-            )
+        display_result_section(
+            "Box/Interaction Plot",
+            results['Plot'],
+            "Download Plot (PNG)",
+            results['Exports']['Plot PNG'],
+            "image/png",
+            "plot"
+        )
 
     with explain_col:
-        if show_plot:
-            display_explanation("Visualization", get_explanation("visualization", model_type))
-
+        display_explanation("Results", get_explanation("results", model_type, results, quality_report))
+        display_explanation("Visualization", get_explanation("visualization", model_type, results, quality_report))
+    
     with main_col:
         # Download full analysis as HTML
         html_content = io.StringIO()
@@ -281,12 +376,10 @@ if results is not None:
         html_content.write("<h4>Assumption Checks</h4>")
         for key, value in results['Assumptions'].items():
             html_content.write(f"<p><b>{key}:</b> {value}</p>")
-        if show_descriptive:
-            html_content.write("<h4>Descriptive Statistics</h4>")
-            html_content.write(results['Descriptive Stats'].to_html(index=False))
-        if show_ls_means:
-            html_content.write("<h4>LS Means Table</h4>")
-            html_content.write(results['LS Means'].to_html(index=False))
+        html_content.write("<h4>Descriptive Statistics</h4>")
+        html_content.write(results['Descriptive Stats'].to_html(index=False))
+        html_content.write("<h4>LS Means Table</h4>")
+        html_content.write(results['LS Means'].to_html(index=False))
         st.download_button(
             label="Download Analysis & Explanation (HTML)",
             data=html_content.getvalue(),
@@ -294,247 +387,141 @@ if results is not None:
             mime='text/html',
         )
 
-# Step 4: Analyze Your Own Data
 if results is not None:
     with main_col:
-        st.header("Step 4: Analyze Your Own Data")
-        display_progress(4, 4)
-        st.write("Now that you've seen the example, you can input your own data to analyze.")
-
-        # Download template for data upload
-        st.subheader("Download Data Template")
-        template_cols = ['Subject', 'Outcome'] + between_factors + repeated_factors
-        template_df = pd.DataFrame(columns=template_cols)
-        csv = template_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=f"Download {model_type if model_type else ''} Data Template (CSV)",
-            data=csv,
-            file_name=f"{model_type.replace(' ', '_') if model_type else 'template'}_template.csv",
-            mime='text/csv',
-        )
-
-        # Imputation Method Selection
-        imputation_method = st.selectbox(
-            "Imputation Method for Missing Values",
-            options=["mean", "median", "none"],
-            help="Choose how to handle missing values in the Outcome column. 'none' will skip imputation.",
-            key="imputation_method"
-        )
-
-        data = None
-        if data_option == "Upload CSV":
-            st.write("Upload a CSV file with columns: Subject, Outcome, and relevant factors (e.g., Drug, Time).")
-            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-            if uploaded_file:
-                try:
-                    data = pd.read_csv(uploaded_file)
-                    st.write("Uploaded Data:")
-                    st.dataframe(data)
-                    between_factors = st.text_input(
-                        f"Between-subjects factors for {model_type} (comma-separated, e.g., Drug,Age)",
-                        ",".join(between_factors)
-                    ).split(",")
-                    between_factors = [f.strip() for f in between_factors if f.strip()]
-                    repeated_factors = st.text_input(
-                        f"Repeated-measures factors for {model_type} (comma-separated, e.g., Time)",
-                        ",".join(repeated_factors)
-                    ).split(",")
-                    repeated_factors = [f.strip() for f in repeated_factors if f.strip()]
-                except Exception as e:
-                    st.error(f"Error loading CSV: {str(e)}")
-
-        elif data_option == "Manual Entry":
-            st.write("Enter data for each group.")
-            num_groups = st.number_input("Number of groups", min_value=1, value=2, step=1)
-            between_factors = st.text_input(
-                f"Between-subjects factors for {model_type} (comma-separated, e.g., Drug,Age)",
-                ",".join(between_factors)
-            ).split(",")
-            between_factors = [f.strip() for f in between_factors if f.strip()]
-            repeated_factors = st.text_input(
-                f"Repeated-measures factors for {model_type} (comma-separated, e.g., Time)",
-                ",".join(repeated_factors)
-            ).split(",")
-            repeated_factors = [f.strip() for f in repeated_factors if f.strip()]
-
-            data_dict = {'Subject': [], 'Outcome': []}
-            for factor in between_factors + repeated_factors:
-                data_dict[factor] = []
-
-            subject_id = 1
-            for group in range(num_groups):
-                group_name = st.text_input(f"Name of group {group+1} (e.g., DrugA)", f"Group{group+1}")
-                num_subjects = st.number_input(
-                    f"Number of subjects in {group_name}",
-                    min_value=1,
-                    value=5,
-                    step=1,
-                    key=f"subjects_{group}"
-                )
-                for s in range(num_subjects):
-                    for t in range(len(repeated_factors) if repeated_factors else 1):
-                        outcome = st.number_input(
-                            f"Outcome for subject {s+1} in {group_name}" + (f" at {repeated_factors[0]} {t+1}" if repeated_factors else ""),
-                            value=100.0,
-                            step=1.0,
-                            key=f"outcome_{group}_{s}_{t}"
-                        )
-                        data_dict['Subject'].append(subject_id)
-                        data_dict['Outcome'].append(outcome)
-                        for factor in between_factors:
-                            if factor == between_factors[0]:
-                                data_dict[factor].append(group_name)
-                            else:
-                                data_dict[factor].append(
-                                    st.text_input(
-                                        f"{factor} for subject {s+1} in {group_name}",
-                                        "Value",
-                                        key=f"{factor}_{group}_{s}"
-                                    )
-                                )
-                        for i, factor in enumerate(repeated_factors):
-                            data_dict[factor].append(t + 1)
-                    subject_id += 1
-
-            if st.button("Submit Data"):
-                try:
-                    data = pd.DataFrame(data_dict)
-                    st.write("Entered Data:")
-                    st.dataframe(data)
-                except Exception as e:
-                    st.error(f"Error processing manual data: {str(e)}")
-
-    with explain_col:
-        st.write("**What:** Allowing you to input your own data via CSV upload or manual entry.")
-        st.write("**Why:** This lets you analyze custom datasets, ensuring the tool is flexible for real-world use. CSV upload is efficient for large datasets, while manual entry suits smaller studies.")
-        st.write("**Source:** The app uses `pandas` to handle data input, similar to how SAS imports data with PROC IMPORT or DATA steps.")
+        # New Section: Try Another Model or Experiment with Your Own Data
+        st.header("Try Another Model or Experiment with Your Own Data")
+        st.write("You can select a different model in the sidebar to try another analysis, or use the 'Analyze Your Own Data' section in the sidebar to input and analyze your own data.")
 
 # Run Custom Analysis
-if data is not None:
+if submit_button and custom_data is not None:
     with main_col:
-        if st.button("Run Analysis with Custom Data"):
-            try:
-                orchestrator = AnalysisOrchestrator(model_type, "Outcome", between_factors, repeated_factors, mcid=5.0)
-                warning_buffer = io.StringIO()
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.simplefilter("always")
-                    results, quality_report = orchestrator.run_pipeline(data, imputation_method=imputation_method)
-                    for warn in w:
-                        if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning)):
-                            warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n\n")
+        try:
+            orchestrator = AnalysisOrchestrator(model_type, "Outcome", between_factors, repeated_factors, mcid=5.0)
+            warning_buffer = io.StringIO()
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                custom_results, custom_quality_report = orchestrator.run_pipeline(custom_data, imputation_method=imputation_method)
+                for warn in w:
+                    if not issubclass(warn.category, (DeprecationWarning, PendingDeprecationWarning)):
+                        warning_buffer.write(f"\n{warn.category.__name__}: {warn.message}\n\n")
 
-                st.subheader("Custom Data Results")
-                # Toggle Outputs
-                show_descriptive, show_ls_means, show_plot = toggle_outputs()
+            st.subheader("Custom Data Results")
+            # Data Quality Report
+            st.write("**Data Quality Report:**")
+            for key, value in custom_quality_report.items():
+                st.write(f"{key}: {value}")
 
-                # Data Quality Report
-                st.write("**Data Quality Report:**")
-                for key, value in quality_report.items():
-                    st.write(f"{key}: {value}")
+            # Assumption Checks
+            display_result_section(
+                "Assumption Checks",
+                custom_results['Assumptions'],
+                "Download Assumptions (Text)",
+                str(custom_results['Assumptions']).encode('utf-8'),
+                "text/plain",
+                "assumptions"
+            )
 
-                # Assumption Checks
+            # Descriptive Statistics (Controlled by Sidebar Checkbox)
+            if show_descriptive:
                 display_result_section(
-                    "Assumption Checks",
-                    results['Assumptions'],
-                    "Download Assumptions (Text)",
-                    str(results['Assumptions']).encode('utf-8'),
-                    "text/plain",
-                    "assumptions"
+                    "Descriptive Statistics",
+                    custom_results['Descriptive Stats'],
+                    "Download Descriptive Stats (CSV)",
+                    custom_results['Exports']['Descriptive Stats CSV'],
+                    "text/csv",
+                    "descriptive_stats"
                 )
 
-                # Descriptive Statistics
-                if show_descriptive:
-                    display_result_section(
-                        "Descriptive Statistics",
-                        results['Descriptive Stats'],
-                        "Download Descriptive Stats (CSV)",
-                        results['Exports']['Descriptive Stats CSV'],
-                        "text/csv",
-                        "descriptive_stats"
-                    )
+            # LS Means (Controlled by Sidebar Checkbox)
+            if show_ls_means:
+                display_result_section(
+                    "LS Means Table",
+                    custom_results['LS Means'],
+                    "Download LS Means (CSV)",
+                    custom_results['Exports']['LS Means CSV'],
+                    "text/csv",
+                    "ls_means"
+                )
+                display_result_section(
+                    "LS Means Plot",
+                    custom_results['LS Means Plot'],
+                    "Download LS Means Plot (PNG)",
+                    custom_results['Exports']['LS Means Plot PNG'],
+                    "image/png",
+                    "ls_means_plot"
+                )
 
-                # LS Means
-                if show_ls_means:
-                    display_result_section(
-                        "LS Means Table",
-                        results['LS Means'],
-                        "Download LS Means (CSV)",
-                        results['Exports']['LS Means CSV'],
-                        "text/csv",
-                        "ls_means"
-                    )
-                    display_result_section(
-                        "LS Means Plot",
-                        results['LS Means Plot'],
-                        "Download LS Means Plot (PNG)",
-                        results['Exports']['LS Means Plot PNG'],
-                        "image/png",
-                        "ls_means_plot"
-                    )
+            # Expected Mean Squares
+            if custom_results['Expected Mean Squares'].size > 0:
+                st.write("This section shows the expected mean squares for the model.")
+                display_result_section(
+                    "Expected Mean Squares",
+                    custom_results['Expected Mean Squares'],
+                    "Download Expected Mean Squares (CSV)",
+                    custom_results['Exports']['Expected Mean Squares CSV'],
+                    "text/csv",
+                    "expected_mean_squares"
+                )
 
-                # Expected Mean Squares
-                if results['Expected Mean Squares'].size > 0:
-                    display_result_section(
-                        "Expected Mean Squares",
-                        results['Expected Mean Squares'],
-                        "Download Expected Mean Squares (CSV)",
-                        results['Exports']['Expected Mean Squares CSV'],
-                        "text/csv",
-                        "expected_mean_squares"
-                    )
+            # Statistical Test Results
+            st.write("**Statistical Test Results:**")
+            if 'Alternative Test' in custom_results:
+                st.markdown(f"<span style='color:red; font-weight:bold;'>Alternative Test Used (Assumptions Failed): {custom_results['Alternative Test']}</span>", unsafe_allow_html=True)
+            elif model_type == "T-test":
+                st.write(f"T-test: t = {custom_results['T-test']['t_stat']:.2f}, p = {custom_results['T-test']['p_value']:.4f}")
+            elif "ANOVA" in model_type:
+                st.write("ANOVA Table:")
+                st.write(custom_results['ANOVA'])
+                if 'Post-Hoc' in custom_results:
+                    st.write("Post-Hoc (Tukey HSD):")
+                    posthoc = custom_results['Post-Hoc']
+                    if hasattr(posthoc, 'summary'):
+                        st.text(posthoc.summary())
+                    elif hasattr(posthoc, '_results_table'):
+                        st.dataframe(pd.DataFrame(posthoc._results_table.data[1:], columns=posthoc._results_table.data[0]))
+                    else:
+                        st.write(posthoc)
+            elif "Repeated Measures ANOVA" in model_type or "Mixed ANOVA" in model_type:
+                st.write("Mixed Model Summary:")
+                st.text(custom_results.get('Repeated Measures ANOVA', custom_results.get('Mixed ANOVA'))['Summary'])
+                st.write("**Run Summary:**")
+                run_summary = custom_results.get('Repeated Measures ANOVA', custom_results.get('Mixed ANOVA'))['Run Summary']
+                for key, value in run_summary.items():
+                    st.write(f"{key}: {value}")
+                st.write("**Variance Estimates:**")
+                st.write(pd.DataFrame(custom_results.get('Repeated Measures ANOVA', custom_results.get('Mixed ANOVA'))['Variance Estimates'].items(),
+                                     columns=['Metric', 'Value']))
 
-                # Statistical Test Results
-                st.write("**Statistical Test Results:**")
-                if 'Alternative Test' in results:
-                    st.markdown(f"<span style='color:red; font-weight:bold;'>Alternative Test Used (Assumptions Failed): {results['Alternative Test']}</span>", unsafe_allow_html=True)
-                elif model_type == "T-test":
-                    st.write(f"T-test: t = {results['T-test']['t_stat']:.2f}, p = {results['T-test']['p_value']:.4f}")
-                elif "ANOVA" in results:
-                    st.write("ANOVA Table:")
-                    st.write(results['ANOVA'])
-                    if 'Post-Hoc' in results:
-                        st.write("Post-Hoc (Tukey HSD):")
-                        posthoc = results['Post-Hoc']
-                        if hasattr(posthoc, 'summary'):
-                            st.text(posthoc.summary())
-                        elif hasattr(posthoc, '_results_table'):
-                            st.dataframe(pd.DataFrame(posthoc._results_table.data[1:], columns=posthoc._results_table.data[0]))
-                        else:
-                            st.write(posthoc)
-                elif "Repeated Measures ANOVA" in results or "Mixed ANOVA" in results:
-                    st.write("Mixed Model Summary:")
-                    st.text(results.get('Repeated Measures ANOVA', results.get('Mixed ANOVA'))['Summary'])
-                    st.write("**Run Summary:**")
-                    run_summary = results.get('Repeated Measures ANOVA', results.get('Mixed ANOVA'))['Run Summary']
-                    for key, value in run_summary.items():
-                        st.write(f"{key}: {value}")
-                    st.write("**Variance Estimates:**")
-                    st.write(pd.DataFrame(results.get('Repeated Measures ANOVA', results.get('Mixed ANOVA'))['Variance Estimates'].items(),
-                                         columns=['Metric', 'Value']))
+            # Effect Sizes
+            st.write("**Effect Sizes:**")
+            st.write(custom_results['Effect Sizes'])
 
-                # Effect Sizes
-                st.write("**Effect Sizes:**")
-                st.write(results['Effect Sizes'])
+            # Visualization (Controlled by Sidebar Checkbox)
+            if show_plot:
+                display_result_section(
+                    "Box/Interaction Plot",
+                    custom_results['Plot'],
+                    "Download Plot (PNG)",
+                    custom_results['Exports']['Plot PNG'],
+                    "image/png",
+                    "plot"
+                )
 
-                # Visualization
-                if show_plot:
-                    display_result_section(
-                        "Box/Interaction Plot",
-                        results['Plot'],
-                        "Download Plot (PNG)",
-                        results['Exports']['Plot PNG'],
-                        "image/png",
-                        "plot"
-                    )
-
-            except Exception as e:
+        except ValueError as e:
+            if "NaN values detected" in str(e):
+                st.error(f"Analysis failed: {str(e)}. Try selecting 'mean' or 'median' for imputation, or clean your dataset to remove missing values.")
+            else:
                 st.error(f"Error during analysis: {str(e)}. Please check your data and factors.")
+        except Exception as e:
+            st.error(f"Error during analysis: {str(e)}. Please check your data and factors.")
 
     with explain_col:
-        if st.session_state.get("ran_custom_analysis", False) and results:
-            display_explanation("Analysis", get_explanation("results", model_type))
+        if custom_results:
+            display_explanation("Assumption Checks", get_explanation("assumption_checks", model_type, custom_results, custom_quality_report))
+            display_explanation("Results", get_explanation("results", model_type, custom_results, custom_quality_report))
             if show_plot:
-                display_explanation("Visualization", get_explanation("visualization", model_type))
+                display_explanation("Visualization", get_explanation("visualization", model_type, custom_results, custom_quality_report))
             # Display warnings
             warnings_text = warning_buffer.getvalue()
             if warnings_text:

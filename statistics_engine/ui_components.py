@@ -49,18 +49,30 @@ def display_explanation(title: str, explanation: dict) -> None:
         title (str): Explanation title.
         explanation (dict): Explanation content.
     """
-    with st.expander(title):
+    with st.expander(title, expanded=True):
         for key, value in explanation.items():
             st.markdown(f'<div class="explanation-bubble"><strong>{key}:</strong> {value}</div>', unsafe_allow_html=True)
 
 def toggle_outputs() -> tuple[bool, bool, bool]:
     """
-    Allow users to toggle which outputs to display.
+    Allow users to toggle which outputs to display with descriptive labels.
 
     Returns:
         tuple[bool, bool, bool]: Booleans indicating whether to show descriptive stats, LS Means, and plots.
     """
-    show_descriptive = st.checkbox("Show Descriptive Statistics", value=True)
-    show_ls_means = st.checkbox("Show LS Means Table and Plot", value=True)
-    show_plot = st.checkbox("Show Box/Interaction Plot", value=True)
+    show_descriptive = st.checkbox(
+        "Show a table of basic statistics (like averages and spreads)",
+        value=True,
+        help="This shows a table with summary stats like means, standard deviations, and counts for each group."
+    )
+    show_ls_means = st.checkbox(
+        "Show a table and chart of adjusted averages (LS Means)",
+        value=True,
+        help="This shows a table and chart of least squares means, which are adjusted averages that account for other factors in the model."
+    )
+    show_plot = st.checkbox(
+        "Show a chart comparing groups or trends (Box/Interaction Plot)",
+        value=True,
+        help="This shows a visual plot to compare groups (box plot) or trends over time (interaction plot), depending on the model."
+    )
     return show_descriptive, show_ls_means, show_plot

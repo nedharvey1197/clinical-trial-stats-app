@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from clinical_trial_analysis_app import ClinicalTrialAnalysis
+from clinical_trial_analysis_app_V0 import ClinicalTrialAnalysis
 
 # Set page config with wide layout
 st.set_page_config(page_title="Clinical Trial Analysis", layout="wide")
