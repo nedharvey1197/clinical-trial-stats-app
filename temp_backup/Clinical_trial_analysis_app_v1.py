@@ -1,20 +1,16 @@
 import pandas as pd
 import streamlit as st
-from lib.analysis import AnalysisOrchestrator
-from lib.data import get_canned_example, between_factors_dict, repeated_factors_dict
-from lib.ui_components import display_progress, display_result_section, display_explanation, toggle_outputs
-from lib.ui_explanations import get_explanation
+from analysis import AnalysisOrchestrator
+from data import get_canned_example, between_factors_dict, repeated_factors_dict
+from ui_components import display_progress, display_result_section, display_explanation, toggle_outputs
+from ui_explanations import get_explanation
 import warnings
 import io
 from datetime import datetime
 
 def main():
     # Set page config with wide layout
-    st.set_page_config(
-        page_title="Statistical Modeling for Clinical Trials", 
-        page_icon="📊",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Clinical Trial Analysis", layout="wide")
     st.markdown("""
         <style>
         .stButton > button, .stDownloadButton > button {
@@ -45,29 +41,24 @@ def main():
         .explanation-bubble strong {
             color: #1a4d8f;
         }
-        .sidebar-divider {
-            margin-top: 20px;
-            margin-bottom: 20px;
-            border-top: 1px solid #ddd;
-        }
         </style>
     """, unsafe_allow_html=True)
-    st.markdown("<h1 class='header'>Stats Models for Clinical Trials</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 p class='subtitle'>Use the Sidebar to Explore Models</h3>", unsafe_allow_html=True)
-    # Sidebar: Split into navigation and page-specific controls
+
+    # Sidebar: App-Level Selections
     with st.sidebar:
+        # Add return to launcher button
+        if st.button("← Return to App Launcher"):
+            st.switch_page("app_launcher.py")
             
-    
-        # Page-specific controls
         st.title("Clinical Trial Analysis")
-        st.write("Select a statistical model and analyze an example analysis or input your data to analyze.")
+        st.write("Select a statistical model and input your data to analyze.")
 
         # Step 1: Model Selection
         st.header("Step 1: Select Model")
-        # display_progress(1, 3)
+        display_progress(1, 3)
         models = list(between_factors_dict.keys())
         model_type = st.selectbox(
-            "Choose a model to explore:",
+            "Choose a model to analyze your data:",
             ["Select a model..."] + models,
             help="Select a statistical model to apply. Each model corresponds to a specific experimental design."
         )
@@ -86,7 +77,7 @@ def main():
 
         # Checkbox for automatically running the canned example
         auto_run = st.checkbox(
-            "Automatically run the the example analysis after selecting",
+            "Automatically run the canned example",
             value=True,
             help="Check this to run the example immediately after selecting a model."
         )
@@ -204,20 +195,14 @@ def main():
         st.subheader("Customize Your Results")
         st.write("Choose which results to display after running the analysis:")
         show_descriptive, show_ls_means, show_plot = toggle_outputs()
-        
-        # Divider between page-specific controls and navigation back to home
-        st.markdown("<div class='sidebar-divider'></div>", unsafe_allow_html=True)
-        # Navigation Section
-        st.title("Navigation")
-        if st.button("← Return to App Launcher"):
-            st.switch_page("app_launcher.py")
+
     # Main Content and Explanation Columns
     main_col, explain_col = st.columns([2, 1])
-    
+
     with main_col:
         st.title(f"Analysis Workflow" + (f": {model_type}" if model_type else ""))
         st.write("Follow the steps below to analyze your clinical trial data.")
-        
+
         # Step 3: Explore a Canned Example
         st.header("Step 3: Explore a Canned Example")
         display_progress(3, 4)
