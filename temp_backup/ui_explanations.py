@@ -1,4 +1,4 @@
-from data import between_factors_dict, repeated_factors_dict
+from lib.data import between_factors_dict, repeated_factors_dict
 from typing import Dict, Any
 
 def get_explanation(step: str, model_type: str, results: Dict[str, Any] = None, quality_report: Dict[str, Any] = None) -> Dict[str, str]:

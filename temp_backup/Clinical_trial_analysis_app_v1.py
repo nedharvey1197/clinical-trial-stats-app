@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 from analysis import AnalysisOrchestrator
-from data import get_canned_example, between_factors_dict, repeated_factors_dict
+from lib.data import get_canned_example, between_factors_dict, repeated_factors_dict
 from ui_components import display_progress, display_result_section, display_explanation, toggle_outputs
 from ui_explanations import get_explanation
 import warnings

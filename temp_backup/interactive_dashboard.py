@@ -48,7 +48,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Import data from the statistics engine
-from data import get_canned_example, between_factors_dict, repeated_factors_dict
+from lib.data import get_canned_example, between_factors_dict, repeated_factors_dict
 
 
 def main():
