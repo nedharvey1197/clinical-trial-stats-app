@@ -177,10 +177,35 @@ def get_canned_example(model: str) -> Dict[str, Any]:
     Raises:
         ValueError: If the model is not found in the canned examples.
     """
-    logger.info(f"Accessing canned example for model: {model}")
-    if model not in canned_examples_with_desc:
-        raise ValueError(f"No canned example found for model: {model}")
-    return canned_examples_with_desc[model]
+
+    # Normalize known model_id aliases to match dictionary keys
+    model_key_map = {
+        "t_test": "T-test",
+        "one_way_anova": "One-way ANOVA",
+        "two_way_anova": "Two-way ANOVA",
+        "three_way_anova": "Three-way ANOVA",
+        "one_way_rm_anova": "One-way Repeated Measures ANOVA",
+        "two_way_rm_anova": "Two-way Repeated Measures ANOVA",
+        "three_way_rm_anova": "Three-way Repeated Measures ANOVA",
+        "mixed_anova_1b1r": "Mixed ANOVA (One Between, One Repeated)",
+        "mixed_anova_2b1r": "Mixed ANOVA (Two Between, One Repeated)",
+        "mixed_anova_1b2r": "Mixed ANOVA (One Between, Two Repeated)",
+        "complex_mixed_anova": "Complex Mixed ANOVA",
+    }
+
+    normalized_model = model_key_map.get(model, model)
+
+    # Optional: adjust or comment out if logger is not available
+    try:
+        from .logger import logger
+        logger.info(f"Accessing canned example for model: {normalized_model}")
+    except ImportError:
+        pass  # or print(f"Accessing model: {normalized_model}")
+
+    from .example_data import canned_examples_with_desc
+    if normalized_model not in canned_examples_with_desc:
+        raise ValueError(f"No canned example found for normalized model: {normalized_model} (original input: {model})")
+    return canned_examples_with_desc[normalized_model]
 
 # Validate datasets on module load
 validate_canned_examples(canned_examples_with_desc)

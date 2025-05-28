@@ -10,6 +10,14 @@ from lib.ui_components import display_progress, display_result_section, toggle_o
 from lib.ui_explanations import get_explanation
 from lib.helpers.test_selector import recommend_tests
 from lib.explainer.explain_test_selection import explain_test
+from lib.helpers.metaMapping import map_clinical_context_to_meta
+from lib.helpers.clinical_mapper import (
+    df_clinical_context,
+    get_valid_intervention_types,
+    get_valid_moas,
+    get_valid_endpoints
+)
+from lib.model_registry import MODEL_REGISTRY
 
 # Future helper modules to be added
 # from lib.helpers.optimizer import generate_design_suggestions
@@ -23,89 +31,246 @@ st.title("🧠 Copilot for Clinical Trial Confidence Analysis")
 step = 1
 total_steps = 5
 
+
 # Step 1: Trial Setup
-st.header("1️⃣ Define Trial Scenario")
+st.header("1️⃣ Define Your Trial Scenario")
 display_progress(step, total_steps)
 
-explanation_map = {
-    "T-test": (
-        "The following trial example illustrates the use of a **T-test**.\n"
-        "\nIt compares two independent groups on a continuous outcome under the assumption of normal distribution\n"
-        "\nThis test is commonly used in two-arm Phase II trials."
-    ),
-    "One-way ANOVA": (
-        "The following trial example demonstrates a **one-way ANOVA**, used to compare three or more independent groups on a continuous outcome.\n"
-        "\nIt helps detect overall group differences, often used in dose-finding studies."
-    ),
-    "Two-way ANOVA": (
-        "The following trial example reflects a **two-way ANOVA**, where two independent factors (e.g., treatment and site) are evaluated for their main effects and interaction on a continuous outcome."
-    ),
-    "Three-way ANOVA": (
-        "The following trial example applies a **three-way ANOVA**.\n"
-        "It is ideal for assessing the combined effects and interactions of three between-subject factors (e.g., drug, site, demographic group) on a continuous outcome."
-    ),
-    "One-way Repeated Measures ANOVA": (
-        "The following trial example illustrates a **one-way repeated measures ANOVA**.\n"
-        "It is appropriate for comparing multiple timepoints within the same subjects.\n"
-        "It is ideal for detecting longitudinal trends in within-subject designs."
-    ),
-    "Two-way Repeated Measures ANOVA": (
-        "The following trial example is a **two-way repeated measures ANOVA**.\n"
-        "It is where repeated measures across time are analyzed alongside a second within-subject condition (e.g., rest vs. stress)."
-    ),
-    "Three-way Repeated Measures ANOVA": (
-        "The following trial example demonstrates a **three-way repeated measures ANOVA**.\n"
-        "It evaluates interactions between multiple within-subject factors over time."
-    ),
-    "Mixed ANOVA (One Between, One Repeated)": (
-        "The following trial example is based on a **mixed ANOVA** design, combining one between-subject factor (e.g., treatment group) and one repeated measure (e.g., pre vs. post).\n"
-        "It is useful for testing group × time interactions."
-    ),
-    "Mixed ANOVA (Two Between, One Repeated)": (
-        "The following trial example reflects a **mixed factorial ANOVA** with two between-subjects factors and one repeated measure.\n"
-        "It is suited for more complex interaction testing across subject groups and timepoints."
-    ),
-    "Mixed ANOVA (One Between, Two Repeated)": (
-        "The following trial example illustrates a **mixed ANOVA** involving one between-subject factor and two repeated measures (e.g., time and condition). "
-        "It allows for rich within- and between-subject interaction analysis."
-    ),
-    "Complex Mixed ANOVA": (
-        "The following trial example represents a **full factorial mixed model**, combining multiple between-subject and repeated factors. "
-        "It is ideal for multi-phase or multi-arm trials requiring interaction modeling across dimensions."
-    )
-}
 
-input_mode = st.radio("Choose input method", ["Use a canned example", "Describe my own trial"])
+trial_type = st.radio(
+    "How would you like to proceed?",
+    ["Use a known trial example", "Enter trial details manually"],
+    key="trial_type_selection"
+)
 
-if input_mode == "Use a canned example":
-    model_names = list(canned_examples_with_desc.keys())
-    selected_model = st.selectbox("Select a canned trial example", model_names)
-    example = get_canned_example(selected_model)
-    # Safely pull explanation
-    copilot_note = explanation_map.get(selected_model, None)
-    if copilot_note:
-        st.markdown(f"## 💡 Lets look at an Example Trial")
-        st.markdown(copilot_note)
-    st.markdown(f"### Trial Description:\n\n{example['description']}")
-    st.dataframe(example["data"].head())
-    meta = get_example_metadata(selected_model)
-else:
-    st.markdown("### Custom Trial Design")
-    outcome_type = st.selectbox("What type of outcome are you measuring?", ["continuous", "binary", "time-to-event"])
-    sample_type = st.selectbox("How are samples structured?", ["independent", "related", "mixed"])
-    paired = st.radio("Is the data paired or repeated (e.g., pre/post)?", [True, False])
-    normal = st.radio("Do you expect a normal distribution?", [True, False])
-    small_n = st.checkbox("Is the sample size small (e.g., <30 per group)?")
-    meta = {
-        "outcome_type": outcome_type,
-        "sample_type": sample_type,
-        "paired": paired,
-        "normal": normal,
-        "small_n": small_n
+# Define curated trial archetypes (11 known canned examples)
+example_options = [
+    {
+        "model_id": "t_test",
+        "label": "Simple two-group comparison (T-test)",
+        "summary": "A trial comparing the efficacy of a new drug vs placebo in patients with mild hypertension.",
+        "example_key": "T-test"
+    },
+    {
+        "model_id": "one_way_anova",
+        "label": "Dose-ranging trial (One-way ANOVA)",
+        "summary": "A trial comparing three dosage levels (placebo, low, high) of a cholesterol-lowering drug.",
+        "example_key": "One-way ANOVA"
+    },
+    {
+        "model_id": "two_way_anova",
+        "label": "Stratified comparison by age (Two-way ANOVA)",
+        "summary": "A trial comparing Drug A vs B for diabetes, stratified by patient age (Young vs Old).",
+        "example_key": "Two-way ANOVA"
+    },
+    {
+        "model_id": "three_way_anova",
+        "label": "Multicenter stratified trial (Three-way ANOVA)",
+        "summary": "A trial evaluating pain relief across drug, age group, and trial site.",
+        "example_key": "Three-way ANOVA"
+    },
+    {
+        "model_id": "one_way_rm_anova",
+        "label": "Single-arm longitudinal trial (One-way RM ANOVA)",
+        "summary": "A within-subject trial measuring inflammation reduction over three timepoints.",
+        "example_key": "One-way Repeated Measures ANOVA"
+    },
+    {
+        "model_id": "two_way_rm_anova",
+        "label": "Crossover trial with repeated tasks (Two-way RM ANOVA)",
+        "summary": "A study evaluating cognitive performance under two task conditions across time.",
+        "example_key": "Two-way Repeated Measures ANOVA"
+    },
+    {
+        "model_id": "three_way_rm_anova",
+        "label": "Stress response over time (Three-way RM ANOVA)",
+        "summary": "A repeated measures study examining anxiety under drug, time, and stress condition.",
+        "example_key": "Three-way Repeated Measures ANOVA"
+    },
+    {
+        "model_id": "mixed_anova_1b1r",
+        "label": "Treatment effect over time (Mixed ANOVA: 1 Between, 1 Repeated)",
+        "summary": "A trial comparing antidepressant vs placebo, tracking changes in symptoms over time.",
+        "example_key": "Mixed ANOVA (One Between, One Repeated)"
+    },
+    {
+        "model_id": "mixed_anova_2b1r",
+        "label": "Stratified repeated measures trial (Mixed ANOVA: 2 Between, 1 Repeated)",
+        "summary": "A migraine study comparing drugs across age groups over multiple visits.",
+        "example_key": "Mixed ANOVA (Two Between, One Repeated)"
+    },
+    {
+        "model_id": "mixed_anova_1b2r",
+        "label": "Dual-condition repeated trial (Mixed ANOVA: 1 Between, 2 Repeated)",
+        "summary": "A crossover trial comparing drug effects on lung function across time and exercise intensity.",
+        "example_key": "Mixed ANOVA (One Between, Two Repeated)"
+    },
+    {
+        "model_id": "complex_mixed_anova",
+        "label": "Multifactorial psychiatric trial (Complex Mixed ANOVA)",
+        "summary": "A schizophrenia trial analyzing drug, age, stress, and time on symptom severity.",
+        "example_key": "Complex Mixed ANOVA"
     }
+]
+
+# Show selection menu if using an example
+if trial_type == "Use a known trial example":
+    st.markdown("### Select a representative trial example")
+    selected_label = st.selectbox(
+        "Choose an example trial type:",
+        [f"{ex['label']}" for ex in example_options],
+        key="selected_example_label"
+    )
+
+    selected_example = next((ex for ex in example_options if ex["label"] == selected_label), None)
+    if selected_example:
+        st.session_state["use_example"] = True
+        st.session_state["example_model_id"] = selected_example["model_id"]
+        st.session_state["example_key"] = selected_example["example_key"]
+        st.markdown(f"**Scenario:** {selected_example['summary']}")
+else:
+    st.session_state["use_example"] = False
+    st.session_state["example_model_id"] = None
+    st.session_state["example_key"] = None
+
+st.markdown("Use the structured form below to describe your trial. Copilot will infer statistical structure from clinical inputs.")
+
+with st.form("clinical_trial_selector_form"):
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        therapeutic_area = st.selectbox("Therapeutic Area", sorted(df_clinical_context["therapeutic_area"].unique()))
+        phase = st.selectbox("Trial Phase", ["Phase I", "Phase II", "Phase III", "Phase IV", "Not Applicable"])
+        design_type = st.selectbox("Trial Design Type", ["Parallel Group", "Crossover", "Single Arm", "Factorial", "Longitudinal"])
+
+    with col2:
+        intervention_type = st.selectbox("Intervention Type", get_valid_intervention_types(therapeutic_area))
+        moa = st.selectbox("Mechanism of Action (MoA)", get_valid_moas(therapeutic_area, intervention_type))
+        control_type = st.selectbox("Control Type", ["Placebo", "Standard of Care", "Active Comparator", "No Control"])
+
+    with col3:
+        endpoint = st.selectbox("Primary Endpoint", get_valid_endpoints(therapeutic_area, intervention_type, moa))
+        n_per_arm = st.selectbox("Sample Size Per Arm", ["<20", "20–50", "51–100", ">100"])
+        randomization = st.selectbox("Randomization", ["Randomized", "Non-Randomized", "Stratified Randomization"])
+
+    submitted = st.form_submit_button("Continue to Step 2")
+
+# Only proceed if form is submitted
+if submitted:
+    meta = map_clinical_context_to_meta(endpoint, design_type, phase, n_per_arm)
+    st.success("Trial configuration submitted.")
+    st.markdown("### 🔍 Copilot-Inferred Trial Metadata")
+    st.json(meta)
 
 
+# --- Step 2: Copilot Recommends Statistical Models ---
+step += 1
+st.header("2️⃣ Copilot Recommends Statistical Approach")
+display_progress(step, total_steps)
 
+from lib.model_registry import MODEL_REGISTRY
+
+# Extract matching fields from meta
+outcome_type = meta.get("outcome_type", "continuous")
+repeated_factors = meta.get("repeated_factors", [])
+
+# Filter based on outcome + repeated measures
+recommended_models = [
+    m for m in MODEL_REGISTRY
+    if outcome_type in m.outcome_types
+    and all(f in m.repeated_factors for f in repeated_factors)
+]
+
+st.markdown("### Recommended Statistical Models")
+
+if recommended_models:
+    model_labels = [f"{m.label} ({m.model_id})" for m in recommended_models]
+    selected_label = st.radio("Select a model to run", model_labels)
+
+    # Store selected model_id in session
+    selected_model = next((m for m in recommended_models if f"{m.label} ({m.model_id})" == selected_label), None)
+    if selected_model:
+        st.session_state["selected_model_id"] = selected_model.model_id
+        st.success(f"Model selected: {selected_model.label}")
+        st.markdown(f"**Description:** {selected_model.description}")
+        st.markdown(f"**Design Tags:** `{', '.join(selected_model.design_tags)}`")
+else:
+    st.warning("⚠️ No models match the current trial structure.")
+    
+## --- Step 3: Run Selected Model ---
+step += 1
+st.header("3️⃣ Run Selected Model")
+display_progress(step, total_steps)
+
+from lib.statistical_dispatcher import run_statistical_model
+
+model_id = st.session_state.get("selected_model_id", None)
+
+if model_id is None:
+    st.warning("Please select a model in Step 2 to continue.")
+else:
+    st.markdown(f"**Selected Model ID:** `{model_id}`")
+
+    # Data Upload or Example
+    st.markdown("#### Upload trial data or use canned example")
+    uploaded_file = st.file_uploader("Upload your CSV", type=["csv"])
+    use_example = st.checkbox("Use example dataset", value=True)
+
+    if uploaded_file or use_example:
+        if uploaded_file:
+            data = pd.read_csv(uploaded_file)
+        else:
+            example = get_canned_example(model_id)
+            data = example["data"]
+            if not isinstance(data, pd.DataFrame):
+                st.error("Loaded example did not return a valid DataFrame.")
+            description = example.get("description", "")
+        st.markdown(f"**Trial Context:** {description}")
+        st.dataframe(data.head())
+
+        # Collect user mappings
+        outcome = st.selectbox("Select outcome variable", data.columns)
+        between_factors = st.multiselect("Between-subject factors", data.columns)
+        within_factors = st.multiselect("Within-subject (repeated) factors", data.columns)
+
+        if st.button("Run Statistical Model"):
+            try:
+                result = run_statistical_model(
+                    model_id=model_id,
+                    data=data,
+                    outcome=outcome,
+                    between_factors=between_factors,
+                    within_factors=within_factors,
+                )
+
+                st.success("✅ Model run completed successfully")
+                st.markdown("### 📊 Results:")
+                st.json(result)
+
+            except Exception as e:
+                st.error(f"❌ Failed to run model: {str(e)}")
+
+# Step 4: Visual & Comparative Dashboard
+step += 1
+st.header("4️⃣ Visualize & Compare")
+display_progress(step, total_steps)
+
+st.markdown("> Comparison coming soon: Bootstrap vs T-test vs Mann-Whitney")
+# compare_models(data, ["T-test", "Bootstrap", "Mann-Whitney"])
+
+# Step 5: Copilot Design Optimizer
+step += 1
+st.header("5️⃣ Copilot Design Suggestions")
+display_progress(step, total_steps)
+
+# Placeholder — insert real logic
+st.markdown("Copilot suggests the following design optimizations:")
+st.markdown("- Consider endpoint swap: continuous biomarker over subjective score")
+st.markdown("- Enrich population to reduce variance")
+st.markdown("- Apply covariate-adjusted model")
+
+# Final Export or Summary Panel
+st.success("Analysis complete. You may export your results or share a summary with your team.")
 
 # Step 2: Copilot Analyzes Your Trial Design
 step += 1
