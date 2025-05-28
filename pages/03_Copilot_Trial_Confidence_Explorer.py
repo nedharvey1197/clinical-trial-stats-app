@@ -2,10 +2,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import logging
 
 # Core app components from existing lib/
 from lib.analysis import AnalysisOrchestrator
-from lib.data import get_canned_example, get_example_metadata, get_example_description, canned_examples_with_desc
+from lib.data import get_canned_example, get_example_metadata, get_example_description, canned_examples_with_desc, get_selector_metadata, repeated_factors_dict, between_factors_dict
 from lib.ui_components import display_progress, display_result_section, toggle_outputs
 from lib.ui_explanations import get_explanation
 from lib.helpers.test_selector import recommend_tests
@@ -18,24 +19,30 @@ from lib.helpers.clinical_mapper import (
     get_valid_endpoints
 )
 from lib.model_registry import MODEL_REGISTRY
+from lib.statistical_dispatcher import run_statistical_model
+from lib.test_recommender import recommend_statistical_test
 
 # Future helper modules to be added
 # from lib.helpers.optimizer import generate_design_suggestions
 # from lib.helpers.model_comparator import compare_models
-
+total_steps = 5
 # App Config
 st.set_page_config(page_title="Copilot: Trial Confidence Explorer", page_icon="🧠", layout="wide")
 st.title("🧠 Copilot for Clinical Trial Confidence Analysis")
 
-# Step Tracker
-step = 1
-total_steps = 5
+# At the top of your file, set default progress state
+if "progress_step" not in st.session_state:
+    st.session_state["progress_step"] = 1
 
+def reset_downstream_state():
+    for k in ["meta", "selected_model_id", "trial_meta"]:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.session_state["progress_step"] = 1  # Reset progress to Step 1
 
 # Step 1: Trial Setup
 st.header("1️⃣ Define Your Trial Scenario")
-display_progress(step, total_steps)
-
+display_progress(1, total_steps)
 
 trial_type = st.radio(
     "How would you like to proceed?",
@@ -116,242 +123,343 @@ example_options = [
 # Show selection menu if using an example
 if trial_type == "Use a known trial example":
     st.markdown("### Select a representative trial example")
-    selected_label = st.selectbox(
+    select_options = [
+        f"{ex['label']} – {ex['summary']}"
+        for ex in example_options
+    ]
+    # Render dropdown
+    selected_combined = st.selectbox(
         "Choose an example trial type:",
-        [f"{ex['label']}" for ex in example_options],
-        key="selected_example_label"
+        select_options,
+        key="selected_example_label",
+        on_change=reset_downstream_state
     )
 
-    selected_example = next((ex for ex in example_options if ex["label"] == selected_label), None)
+    # Find the matching example based on combined label
+    selected_example = next(
+        (ex for ex in example_options if selected_combined.startswith(ex["label"])),
+        None
+    )
+    # Save to session state
     if selected_example:
         st.session_state["use_example"] = True
         st.session_state["example_model_id"] = selected_example["model_id"]
         st.session_state["example_key"] = selected_example["example_key"]
         st.markdown(f"**Scenario:** {selected_example['summary']}")
+        
+        st.markdown("The following structured table describes your trial. Copilot will infer statistical structure from clinical inputs.")
+
+        # Get selector metadata for the selected example
+        selector_metadata = get_selector_metadata(selected_example["example_key"])
+        print("[LOG] Selected example key:", selected_example["example_key"])
+        print("[LOG] Selector metadata:", selector_metadata)
+
+        with st.form("clinical_trial_selector_form"):
+            st.markdown(f"""
+            <style>
+            .copilot-meta-table {{
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 0 0.5em;
+                margin-bottom: 1.5em;
+            }}
+            .copilot-meta-table th {{
+                background: #f8fafc;
+                color: #222;
+                font-size: 1.1em;
+                font-weight: 700;
+                padding: 0.75em 1em;
+                border-bottom: 2px solid #4CAF50;
+                border-radius: 8px 8px 0 0;
+            }}
+            .copilot-meta-table td {{
+                background: #fff;
+                color: #222;
+                font-size: 1em;
+                padding: 0.7em 1em;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+            }}
+            .copilot-meta-table tr:not(:last-child) td {{
+                border-bottom: none;
+            }}
+            </style>
+            <table class="copilot-meta-table">
+                <tr>
+                    <th>Trial Characteristics</th>
+                    <th>Intervention Details</th>
+                    <th>Trial Parameters</th>
+                </tr>
+                <tr>
+                    <td><b>Therapeutic Area:</b> {selector_metadata['therapeutic_area']}</td>
+                    <td><b>Intervention Type:</b> {selector_metadata['intervention_type']}</td>
+                    <td><b>Primary Endpoint:</b> {selector_metadata['endpoint']}</td>
+                </tr>
+                <tr>
+                    <td><b>Trial Phase:</b> {selector_metadata['phase']}</td>
+                    <td><b>Mechanism of Action (MoA):</b> {selector_metadata['moa']}</td>
+                    <td><b>Sample Size Per Arm:</b> {selector_metadata['n_per_arm']}</td>
+                </tr>
+                <tr>
+                    <td><b>Trial Design Type:</b> {selector_metadata['design_type']}</td>
+                    <td><b>Control Type:</b> {selector_metadata['control_type']}</td>
+                    <td><b>Randomization:</b> {selector_metadata['randomization']}</td>
+                </tr>
+            </table>
+            """, unsafe_allow_html=True)
+            submitted = st.form_submit_button("Continue to Step 2")
+            if submitted:
+                st.session_state["therapeutic_area"] = selector_metadata["therapeutic_area"]
+                st.session_state["phase"] = selector_metadata["phase"]
+                st.session_state["design_type"] = selector_metadata["design_type"]
+                st.session_state["intervention_type"] = selector_metadata["intervention_type"]
+                st.session_state["moa"] = selector_metadata["moa"]
+                st.session_state["control_type"] = selector_metadata["control_type"]
+                st.session_state["endpoint"] = selector_metadata["endpoint"]
+                st.session_state["n_per_arm"] = selector_metadata["n_per_arm"]
+                st.session_state["randomization"] = selector_metadata["randomization"]
+                print("[LOG] Set session_state for canned example:", {
+                    "therapeutic_area": selector_metadata["therapeutic_area"],
+                    "phase": selector_metadata["phase"],
+                    "design_type": selector_metadata["design_type"],
+                    "intervention_type": selector_metadata["intervention_type"],
+                    "moa": selector_metadata["moa"],
+                    "control_type": selector_metadata["control_type"],
+                    "endpoint": selector_metadata["endpoint"],
+                    "n_per_arm": selector_metadata["n_per_arm"],
+                    "randomization": selector_metadata["randomization"]
+                })
+                # Set meta for canned example
+                example_key = selected_example["example_key"]
+                example_dict = canned_examples_with_desc[example_key]
+                outcome_type = example_dict["metadata"]["outcome_type"]
+                repeated_factors = repeated_factors_dict.get(example_key, [])
+                st.session_state["meta"] = {
+                    "outcome_type": outcome_type,
+                    "repeated_factors": repeated_factors
+                }
+                print("[LOG] Set meta for canned example:", st.session_state["meta"])
+                st.session_state["progress_step"] = 2  # Move to Step 2
 else:
     st.session_state["use_example"] = False
     st.session_state["example_model_id"] = None
     st.session_state["example_key"] = None
 
-st.markdown("Use the structured form below to describe your trial. Copilot will infer statistical structure from clinical inputs.")
+    st.markdown("Use the structured form below to describe your trial. Copilot will infer statistical structure from clinical inputs.")
 
-with st.form("clinical_trial_selector_form"):
-    col1, col2, col3 = st.columns(3)
+    # Add this CSS before the form section (only once, near the top or before the form)
+    st.markdown("""
+        <style>
+        .copilot-form-header {
+            font-size: 1.1em;
+            font-weight: 700;
+            margin-bottom: 0.5em;
+            color: #222;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    with col1:
-        therapeutic_area = st.selectbox("Therapeutic Area", sorted(df_clinical_context["therapeutic_area"].unique()))
-        phase = st.selectbox("Trial Phase", ["Phase I", "Phase II", "Phase III", "Phase IV", "Not Applicable"])
-        design_type = st.selectbox("Trial Design Type", ["Parallel Group", "Crossover", "Single Arm", "Factorial", "Longitudinal"])
+    with st.form("clinical_trial_selector_form"):
+        col1, col2, col3 = st.columns(3)
 
-    with col2:
-        intervention_type = st.selectbox("Intervention Type", get_valid_intervention_types(therapeutic_area))
-        moa = st.selectbox("Mechanism of Action (MoA)", get_valid_moas(therapeutic_area, intervention_type))
-        control_type = st.selectbox("Control Type", ["Placebo", "Standard of Care", "Active Comparator", "No Control"])
+        with col1:
+            st.markdown('<div class="copilot-form-header">Trial Characteristics</div>', unsafe_allow_html=True)
+            therapeutic_area = st.selectbox("Therapeutic Area", sorted(df_clinical_context["therapeutic_area"].unique()), key="therapeutic_area_select")
+            phase = st.selectbox("Trial Phase", ["Phase I", "Phase II", "Phase III", "Phase IV", "Not Applicable"], key="phase_select")
+            design_type = st.selectbox("Trial Design Type", ["Parallel Group", "Crossover", "Single Arm", "Factorial", "Longitudinal"], key="design_type_select")
 
-    with col3:
-        endpoint = st.selectbox("Primary Endpoint", get_valid_endpoints(therapeutic_area, intervention_type, moa))
-        n_per_arm = st.selectbox("Sample Size Per Arm", ["<20", "20–50", "51–100", ">100"])
-        randomization = st.selectbox("Randomization", ["Randomized", "Non-Randomized", "Stratified Randomization"])
+        with col2:
+            st.markdown('<div class="copilot-form-header">Intervention Details</div>', unsafe_allow_html=True)
+            intervention_type = st.selectbox("Intervention Type", get_valid_intervention_types(therapeutic_area), key="intervention_type_select")
+            moa = st.selectbox("Mechanism of Action (MoA)", get_valid_moas(therapeutic_area, intervention_type), key="moa_select", )
+            control_type = st.selectbox("Control Type", ["Placebo", "Standard of Care", "Active Comparator", "No Control"], key="control_type_select")
 
-    submitted = st.form_submit_button("Continue to Step 2")
+        with col3:
+            st.markdown('<div class="copilot-form-header">Trial Parameters</div>', unsafe_allow_html=True)
+            endpoint = st.selectbox("Primary Endpoint", get_valid_endpoints(therapeutic_area, intervention_type, moa), key="endpoint_select")
+            n_per_arm = st.selectbox("Sample Size Per Arm", ["<20", "20–50", "51–100", ">100"], key="n_per_arm_select")
+            randomization = st.selectbox("Randomization", ["Randomized", "Non-Randomized", "Stratified Randomization"], key="randomization_select")
+
+        submitted = st.form_submit_button("Continue to Step 2")
+        if submitted:
+            st.session_state["therapeutic_area"] = therapeutic_area
+            st.session_state["phase"] = phase
+            st.session_state["design_type"] = design_type
+            st.session_state["intervention_type"] = intervention_type
+            st.session_state["moa"] = moa
+            st.session_state["control_type"] = control_type
+            st.session_state["endpoint"] = endpoint
+            st.session_state["n_per_arm"] = n_per_arm
+            st.session_state["randomization"] = randomization
+            print("[DEBUG] Set session_state for manual entry:", {
+                "therapeutic_area": therapeutic_area,
+                "phase": phase,
+                "design_type": design_type,
+                "intervention_type": intervention_type,
+                "moa": moa,
+                "control_type": control_type,
+                "endpoint": endpoint,
+                "n_per_arm": n_per_arm,
+                "randomization": randomization
+            })
+            # Set meta for manual entry
+            meta_dict = map_clinical_context_to_meta(
+                endpoint,
+                design_type,
+                phase,
+                n_per_arm
+            )
+            outcome_type = meta_dict.get("outcome_type", "continuous")
+            repeated_factors = repeated_factors_dict.get(design_type, [])
+            st.session_state["meta"] = {
+                "outcome_type": outcome_type,
+                "repeated_factors": repeated_factors
+            }
+            print("[DEBUG] Set meta for manual entry:", st.session_state["meta"])
+            st.session_state["progress_step"] = 2  # Move to Step 2
 
 # Only proceed if form is submitted
 if submitted:
-    meta = map_clinical_context_to_meta(endpoint, design_type, phase, n_per_arm)
+    meta = map_clinical_context_to_meta(
+        st.session_state["endpoint"],
+        st.session_state["design_type"],
+        st.session_state["phase"],
+        st.session_state["n_per_arm"]
+    )
     st.success("Trial configuration submitted.")
+
+
+
+# --- Step 2: Copilot Recommends Statistical Model ---
+if st.session_state.get("progress_step", 1) >= 2:
+    step = 2
+    st.header("2️⃣ Copilot Recommends Statistical Approach")
+    display_progress(step, total_steps)
+    
     st.markdown("### 🔍 Copilot-Inferred Trial Metadata")
-    st.json(meta)
-
-
-# --- Step 2: Copilot Recommends Statistical Models ---
-step += 1
-st.header("2️⃣ Copilot Recommends Statistical Approach")
-display_progress(step, total_steps)
-
-from lib.model_registry import MODEL_REGISTRY
-
-# Extract matching fields from meta
-outcome_type = meta.get("outcome_type", "continuous")
-repeated_factors = meta.get("repeated_factors", [])
-
-# Filter based on outcome + repeated measures
-recommended_models = [
-    m for m in MODEL_REGISTRY
-    if outcome_type in m.outcome_types
-    and all(f in m.repeated_factors for f in repeated_factors)
-]
-
-st.markdown("### Recommended Statistical Models")
-
-if recommended_models:
-    model_labels = [f"{m.label} ({m.model_id})" for m in recommended_models]
-    selected_label = st.radio("Select a model to run", model_labels)
-
-    # Store selected model_id in session
-    selected_model = next((m for m in recommended_models if f"{m.label} ({m.model_id})" == selected_label), None)
-    if selected_model:
-        st.session_state["selected_model_id"] = selected_model.model_id
-        st.success(f"Model selected: {selected_model.label}")
-        st.markdown(f"**Description:** {selected_model.description}")
-        st.markdown(f"**Design Tags:** `{', '.join(selected_model.design_tags)}`")
-else:
-    st.warning("⚠️ No models match the current trial structure.")
-    
-## --- Step 3: Run Selected Model ---
-step += 1
-st.header("3️⃣ Run Selected Model")
-display_progress(step, total_steps)
-
-from lib.statistical_dispatcher import run_statistical_model
-
-model_id = st.session_state.get("selected_model_id", None)
-
-if model_id is None:
-    st.warning("Please select a model in Step 2 to continue.")
-else:
-    st.markdown(f"**Selected Model ID:** `{model_id}`")
-
-    # Data Upload or Example
-    st.markdown("#### Upload trial data or use canned example")
-    uploaded_file = st.file_uploader("Upload your CSV", type=["csv"])
-    use_example = st.checkbox("Use example dataset", value=True)
-
-    if uploaded_file or use_example:
-        if uploaded_file:
-            data = pd.read_csv(uploaded_file)
-        else:
-            example = get_canned_example(model_id)
-            data = example["data"]
-            if not isinstance(data, pd.DataFrame):
-                st.error("Loaded example did not return a valid DataFrame.")
-            description = example.get("description", "")
-        st.markdown(f"**Trial Context:** {description}")
-        st.dataframe(data.head())
-
-        # Collect user mappings
-        outcome = st.selectbox("Select outcome variable", data.columns)
-        between_factors = st.multiselect("Between-subject factors", data.columns)
-        within_factors = st.multiselect("Within-subject (repeated) factors", data.columns)
-
-        if st.button("Run Statistical Model"):
-            try:
-                result = run_statistical_model(
-                    model_id=model_id,
-                    data=data,
-                    outcome=outcome,
-                    between_factors=between_factors,
-                    within_factors=within_factors,
-                )
-
-                st.success("✅ Model run completed successfully")
-                st.markdown("### 📊 Results:")
-                st.json(result)
-
-            except Exception as e:
-                st.error(f"❌ Failed to run model: {str(e)}")
-
-# Step 4: Visual & Comparative Dashboard
-step += 1
-st.header("4️⃣ Visualize & Compare")
-display_progress(step, total_steps)
-
-st.markdown("> Comparison coming soon: Bootstrap vs T-test vs Mann-Whitney")
-# compare_models(data, ["T-test", "Bootstrap", "Mann-Whitney"])
-
-# Step 5: Copilot Design Optimizer
-step += 1
-st.header("5️⃣ Copilot Design Suggestions")
-display_progress(step, total_steps)
-
-# Placeholder — insert real logic
-st.markdown("Copilot suggests the following design optimizations:")
-st.markdown("- Consider endpoint swap: continuous biomarker over subjective score")
-st.markdown("- Enrich population to reduce variance")
-st.markdown("- Apply covariate-adjusted model")
-
-# Final Export or Summary Panel
-st.success("Analysis complete. You may export your results or share a summary with your team.")
-
-# Step 2: Copilot Analyzes Your Trial Design
-step += 1
-st.header("2️⃣ Copilot Analyzes Your Trial Design")
-display_progress(step, total_steps)
-
-outcome_map = {
-    "continuous": "a continuous outcome",
-    "binary": "a binary (yes/no) outcome",
-    "time-to-event": "a time-to-event outcome"
-}
-
-sample_map = {
-    "independent": "independent samples",
-    "related": "related samples",
-    "mixed": "mixed samples"
-}
-
-if input_mode == "Use a canned example":
-    st.markdown("Copilot has analyzed the selected example and inferred the following trial structure:")
-    
-    summary_parts = [
-        f"- Outcome type: **{outcome_map.get(meta['outcome_type'], meta['outcome_type'])}**",
-        f"- Sample structure: **{sample_map.get(meta['sample_type'], meta['sample_type'])}**",
-        f"- Paired or repeated measures: **{'Yes' if meta['paired'] else 'No'}**",
-        f"- Distribution assumption: **{'Normal' if meta['normal'] else 'Non-normal or unknown'}**",
-        f"- Sample size condition: **{'Small sample' if meta['small_n'] else 'Adequate sample size'}**"
+    # Display a human-readable summary of the trial design
+    summary_lines = [
+        f"- Outcome type: {st.session_state['meta']['outcome_type']}",
+        f"- Number of groups: {n_groups if 'n_groups' in locals() else 'N/A'}",
+        f"- Between-subjects factors: {n_between if 'n_between' in locals() else 'N/A'}",
+        f"- Repeated measures factors: {n_within if 'n_within' in locals() else 'N/A'} ({', '.join(st.session_state['meta']['repeated_factors']) if st.session_state['meta']['repeated_factors'] else 'None'})"
     ]
-    st.markdown("\n".join(summary_parts))
-else:
-    st.markdown("Based on your inputs, Copilot recommends the following test(s):")
+    st.success("**Trial Design Summary**\n" + "\n".join(summary_lines))
 
-# Recommend tests based on metadata
-recommended = recommend_tests(
-    outcome_type=meta["outcome_type"],
-    sample_type=meta["sample_type"],
-    paired=meta["paired"],
-    normal=meta["normal"],
-    small_n=meta["small_n"]
-)
+    # Gather design info from meta/session_state
+    meta = st.session_state["meta"]
+    # You may need to infer these from your meta/session_state or data:
+    # For canned examples, you can get the grouping variable and count unique values
+    # For manual entry, you may need to ask the user or infer from uploaded data
+    # Example for canned:
+    if st.session_state.get("use_example"):
+        example_key = st.session_state["example_key"]
+        example_dict = canned_examples_with_desc[example_key]
+        # Assume 'Drug' is the main grouping variable for between-subjects
+        group_col = "Drug" if "Drug" in example_dict["data"].columns else example_dict["data"].columns[1]
+        n_groups = example_dict["data"][group_col].nunique()
+        n_between = len([f for f in example_dict["data"].columns if f in between_factors_dict[example_key]])
+        n_within = len(meta.get("repeated_factors", []))
+        n_within_levels = [example_dict["data"][f].nunique() for f in meta.get("repeated_factors", [])]
+    else:
+        # For manual, you may need to infer or ask for these
+        # Here we use placeholders; you should replace with real logic
+        n_between = 1  # TODO: infer from user input
+        n_within = len(meta.get("repeated_factors", []))
+        n_groups = 2   # TODO: infer from user input or uploaded data
+        n_within_levels = [2 for _ in range(n_within)]  # TODO: infer from user input or uploaded data
 
-st.markdown("---")
-st.markdown("### 🔍 Recommended Test(s):")
+    model_id = recommend_statistical_test(n_between, n_within, n_groups, n_within_levels)
+    print(f"[DEBUG] Recommended model_id: {model_id}")
 
-for rec in recommended:
-    exp = explain_test(rec["test"])
-    st.subheader(f"📌 {exp['title']}")
-    st.markdown(f"**Summary:** {exp['summary']}")
-    st.markdown(f"**When to Use:** {exp['when_to_use']}")
-    st.markdown(f"**Assumptions:** {exp['assumptions']}")
-    if exp['reference']:
-        st.markdown(f"[📚 Learn more]({exp['reference']})")
+    # Now use model_id to select the model from MODEL_REGISTRY
+    from lib.model_registry import MODEL_REGISTRY
+    matched_models = [m for m in MODEL_REGISTRY if m.model_id == model_id]
+    # Build explanation string for why the test was chosen
+    gating_explanation = []
+    if n_between == 0 and n_within == 1:
+        gating_explanation.append("No between-subjects factors and 1 repeated factor: One-way Repeated Measures ANOVA.")
+    elif n_between == 0 and n_within == 2:
+        gating_explanation.append("No between-subjects factors and 2 repeated factors: Two-way Repeated Measures ANOVA.")
+    elif n_between == 0 and n_within == 3:
+        gating_explanation.append("No between-subjects factors and 3 repeated factors: Three-way Repeated Measures ANOVA.")
+    elif n_between == 1 and n_within == 0 and n_groups == 2:
+        gating_explanation.append("1 between-subjects factor with 2 groups: T-test.")
+    elif n_between == 1 and n_within == 0 and n_groups > 2:
+        gating_explanation.append("1 between-subjects factor with >2 groups: One-way ANOVA.")
+    elif n_between == 2 and n_within == 0:
+        gating_explanation.append("2 between-subjects factors: Two-way ANOVA.")
+    elif n_between == 3 and n_within == 0:
+        gating_explanation.append("3 between-subjects factors: Three-way ANOVA.")
+    elif n_between == 1 and n_within == 1:
+        gating_explanation.append("1 between and 1 repeated factor: Mixed ANOVA (One Between, One Repeated).")
+    elif n_between == 2 and n_within == 1:
+        gating_explanation.append("2 between and 1 repeated factor: Mixed ANOVA (Two Between, One Repeated).")
+    elif n_between == 1 and n_within == 2:
+        gating_explanation.append("1 between and 2 repeated factors: Mixed ANOVA (One Between, Two Repeated).")
+    elif n_between >= 2 and n_within >= 2:
+        gating_explanation.append("2+ between and 2+ repeated factors: Complex Mixed ANOVA.")
+    else:
+        gating_explanation.append("No appropriate test found for this design.")
+        
+    if matched_models:
+        best_model = matched_models[0]
+        st.session_state["selected_model_id"] = best_model.model_id
+        st.success(f"Recommended Model: **{best_model.label}**")
+        st.markdown(f"**Why?** {gating_explanation[0]}")
+        st.markdown(f"**Description**: {best_model.description}")
+        st.markdown(f"**Design Tags**: `{', '.join(best_model.design_tags)}`")
+        if st.button("Continue to Calculations", key="Continue2_3"):
+            st.session_state["progress_step"] = 3
+    else:
+        st.warning("No matching model found for this design. Please check the design or expand the model registry.")
 
-# Step 3: Run Models
-step += 1
-st.header("3️⃣ Run Selected Analyses")
-display_progress(step, total_steps)
 
-orchestrator = AnalysisOrchestrator()
-results = orchestrator.run_analysis(data, model_type="T-test")
-st.write("**Results:**")
-st.write(results)
+    # DEPRECATED: Old matching logic by repeated_factors/outcome_type is no longer used.
 
-# Step 4: Visual & Comparative Dashboard
-step += 1
-st.header("4️⃣ Visualize & Compare")
-display_progress(step, total_steps)
 
-st.markdown("> Comparison coming soon: Bootstrap vs T-test vs Mann-Whitney")
-# compare_models(data, ["T-test", "Bootstrap", "Mann-Whitney"])
+# --- Step 3: Run Selected Model ---
+if st.session_state.get("progress_step", 1) >= 3:
+    step = 3
+    st.header("3️⃣ Run Selected Model")
+    display_progress(step, total_steps)
 
-# Step 5: Copilot Design Optimizer
-step += 1
-st.header("5️⃣ Copilot Design Suggestions")
-display_progress(step, total_steps)
+    model_id = st.session_state.get("selected_model_id", None)
 
-# Placeholder — insert real logic
-st.markdown("Copilot suggests the following design optimizations:")
-st.markdown("- Consider endpoint swap: continuous biomarker over subjective score")
-st.markdown("- Enrich population to reduce variance")
-st.markdown("- Apply covariate-adjusted model")
+    if model_id is None:
+        st.warning("Please complete Step 2 before running analysis.")
+    else:
+        st.markdown(f"**Selected Model ID:** `{model_id}`")
 
-# Final Export or Summary Panel
-st.success("Analysis complete. You may export your results or share a summary with your team.")
+        uploaded_file = st.file_uploader("Upload trial dataset (CSV)", type=["csv"])
+        use_example = st.checkbox("Use canned example", value=True)
+
+        if uploaded_file or use_example:
+            if uploaded_file:
+                data = pd.read_csv(uploaded_file)
+            else:
+                example_dict = get_canned_example(model_id)
+                data = example_dict['data']  # Extract the DataFrame from the dictionary
+
+            st.markdown("✅ Data Preview:")
+            st.dataframe(data.head())
+
+            outcome = st.selectbox("Select outcome variable", data.columns)
+            between_factors = st.multiselect("Between-subject factors", data.columns)
+            within_factors = st.multiselect("Within-subject (repeated) factors", data.columns)
+
+            if st.button("Run Analysis", key="RunAnalysis"):
+                try:
+                    result = run_statistical_model(
+                        model_id=model_id,
+                        data=data,
+                        outcome=outcome,
+                        between_factors=between_factors,
+                        within_factors=within_factors,
+                    )
+                    st.success("✅ Model run complete.")
+                    st.markdown("### 📊 Results")
+                    st.json(result)
+
+                except Exception as e:
+                    st.error(f"❌ Model execution failed: {str(e)}")

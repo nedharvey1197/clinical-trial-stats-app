@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+</head>
+<body>
+  <canvas id="mvpChart"></canvas>
+  <script>
+    const ctx = document.getElementById('mvpChart').getContext('2d');
+    new Chart(ctx, {
+      type: "scatter",
+      data: {
+        datasets: [
+          {
+            label: "Precision Analytics",
+            data: [
+              { x: "User Intake", y: 1 },
+              { x: "Baseline Design", y: 2 },
+              { x: "Scenario Analysis", y: 3 },
+              { x: "Protocol Synopsis", y: 4 }
+            ],
+            backgroundColor: "#00A86B",
+            borderColor: "#00A86B",
+            pointRadius: 8,
+            pointHoverRadius: 10
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          title: {
+            display: true,
+            text: "MVP: Directional Accuracy Meets Precision",
+            font: { size: 18 }
+          },
+          legend: { display: false },
+          annotation: {
+            annotations: [
+              // Blue Arrow for Directional Accuracy
+              {
+                type: "line",
+                xMin: "User Intake",
+                xMax: "Protocol Synopsis",
+                yMin: 0.5,
+                yMax: 4.5,
+                borderColor: "#005B99",
+                borderWidth: 4,
+                arrowHeads: {
+                  end: {
+                    enabled: true,
+                    fill: true,
+                    borderColor: "#005B99",
+                    backgroundColor: "#005B99",
+                    length: 10,
+                    width: 8
+                  }
+                },
+                label: {
+                  enabled: true,
+                  content: "Directional Accuracy",
+                  position: "center",
+                  backgroundColor: "rgba(0, 91, 153, 0.8)",
+                  color: "#fff",
+                  padding: 6
+                }
+              },
+              // Green Point Annotations with Example Analytics
+              {
+                type: "label",
+                xValue: "User Intake",
+                yValue: 1,
+                content: ["Stakeholder Alignment Score"],
+                backgroundColor: "rgba(0, 168, 107, 0.8)",
+                color: "#fff",
+                padding: 6,
+                yAdjust: -20
+              },
+              {
+                type: "label",
+                xValue: "Baseline Design",
+                yValue: 2,
+                content: ["Design Feasibility Index"],
+                backgroundColor: "rgba(0, 168, 107, 0.8)",
+                color: "#fff",
+                padding: 6,
+                yAdjust: -20
+              },
+              {
+                type: "label",
+                xValue: "Scenario Analysis",
+                yValue: 3,
+                content: ["Scenario Success Probability"],
+                backgroundColor: "rgba(0, 168, 107, 0.8)",
+                color: "#fff",
+                padding: 6,
+                yAdjust: -20
+              },
+              {
+                type: "label",
+                xValue: "Protocol Synopsis",
+                yValue: 4,
+                content: ["Synopsis Completeness Score"],
+                backgroundColor: "rgba(0, 168, 107, 0.8)",
+                color: "#fff",
+                padding: 6,
+                yAdjust: -20
+              }
+            ]
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: "MVP Stages" },
+            type: "category",
+            labels: ["User Intake", "Baseline Design", "Scenario Analysis", "Protocol Synopsis"]
+          },
+          y: { display: false }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
