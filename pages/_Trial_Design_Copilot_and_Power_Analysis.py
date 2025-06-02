@@ -29,8 +29,9 @@ from lib.test_recommender import recommend_statistical_test
 # from lib.helpers.model_comparator import compare_models
 total_steps = 5
 # App Config
-st.set_page_config(page_title="Copilot: Trial Confidence Explorer", page_icon="🧠", layout="wide")
-st.title("🧠 Copilot for Clinical Trial Confidence Analysis")
+st.set_page_config(page_title="Trial Design Copilot & Power Analysis", page_icon="🤖", layout="wide")
+st.title("🤖 Trial Design Copilot & Power Analysis")
+st.markdown("<h3 p class='subtitle'>Step-by-step workflow for designing, validating, and analyzing clinical trials. Includes statistical guidance, power/sample size calculations, and robust data validation for confident, explainable results.</h3>", unsafe_allow_html=True)
 
 # Add reset functionality to sidebar
 with st.sidebar:
@@ -49,6 +50,26 @@ with st.sidebar:
         st.markdown(f"**Current Step:** {st.session_state['progress_step']}/5")
     else:
         st.markdown("**Current Step:** 1/5")
+    
+    # Glossary & Learn More
+    with st.expander("📚 Glossary & Learn More", expanded=False):
+        st.markdown("""
+**Outcome Type:** The kind of data measured for your primary endpoint (e.g., continuous, binary, count, time-to-event). [Learn more](https://en.wikipedia.org/wiki/Dependent_and_independent_variables)
+
+**Covariate:** A variable that may influence the outcome but is not the main focus of the study (e.g., age, sex). [Learn more](https://en.wikipedia.org/wiki/Covariate)
+
+**Normality:** The assumption that data are distributed in a bell-shaped (normal) curve. [Learn more](https://en.wikipedia.org/wiki/Normal_distribution)
+
+**Sphericity:** The assumption that variances of the differences between all combinations of related groups are equal (important for repeated measures). [Learn more](https://en.wikipedia.org/wiki/Sphericity)
+
+**Power:** The probability of detecting a true effect if it exists. [Learn more](https://en.wikipedia.org/wiki/Statistical_power)
+
+**Sample Size:** The number of subjects in each group or arm of the trial. [Learn more](https://en.wikipedia.org/wiki/Sample_size_determination)
+
+**Randomization:** The process of assigning subjects to groups by chance. [Learn more](https://en.wikipedia.org/wiki/Randomization)
+
+**Repeated Measures:** When the same subjects are measured more than once (e.g., before and after treatment). [Learn more](https://en.wikipedia.org/wiki/Repeated_measures_design)
+        """)
 
 # At the top of your file, set default progress state
 if "progress_step" not in st.session_state:
@@ -80,6 +101,31 @@ endpoint_to_outcome_type = {
     # ...add more as needed...
 }
 
+# Utility: Canonical test key mapping for explain_test
+
+def get_canonical_test_key(label: str) -> str:
+    label_norm = label.lower().replace('-', ' ').replace('_', ' ').replace('  ', ' ').strip()
+    mapping = {
+        "independent samples t test": "T-test",
+        "independent samples t-test": "T-test",
+        "t test": "T-test",
+        "t-test": "T-test",
+        "independent t test": "T-test",
+        "independent t-test": "T-test",
+        "paired t test": "Paired T-Test",
+        "paired t-test": "Paired T-Test",
+        "mann whitney u": "Mann-Whitney U Test",
+        "mann-whitney u": "Mann-Whitney U Test",
+        "bootstrap t test": "Bootstrap T-Test",
+        "chi square test": "Chi-Square Test",
+        "chi-square test": "Chi-Square Test",
+        "fisher's exact test": "Fisher's Exact Test",
+        "log rank test": "Log-Rank Test",
+        "wilcoxon signed rank test": "Wilcoxon Signed-Rank Test",
+        # Add more as needed
+    }
+    return mapping.get(label_norm, label)
+
 # --- Step 1: Main Trial Setup ---
 st.header("📝 Step 1: Main Trial Setup")
 with st.expander("Step 1: Main Trial Setup", expanded=st.session_state.get("progress_step", 1) == 1):
@@ -98,16 +144,16 @@ with st.expander("Step 1: Main Trial Setup", expanded=st.session_state.get("prog
         with st.form("main_trial_form"):
             col1, col2, col3 = st.columns(3)
             with col1:
-                therapeutic_area = st.selectbox("Therapeutic Area", sorted(df_clinical_context["therapeutic_area"].unique()), key="step1_therapeutic_area_select")
-                phase = st.selectbox("Trial Phase", ["Phase I", "Phase II", "Phase III", "Phase IV", "Not Applicable"], key="step1_phase_select")
-                design_type = st.selectbox("Trial Design Type", ["Parallel Group", "Crossover", "Single Arm", "Factorial", "Longitudinal"], key="step1_design_type_select")
+                therapeutic_area = st.selectbox("Therapeutic Area", sorted(df_clinical_context["therapeutic_area"].unique()), key="step1_therapeutic_area_select", help="The medical field or disease area being studied (e.g., Cardiology, Oncology).")
+                phase = st.selectbox("Trial Phase", ["Phase I", "Phase II", "Phase III", "Phase IV", "Not Applicable"], key="step1_phase_select", help="The stage of clinical development (I-IV) or 'Not Applicable' for observational studies.")
+                design_type = st.selectbox("Trial Design Type", ["Parallel Group", "Crossover", "Single Arm", "Factorial", "Longitudinal"], key="step1_design_type_select", help="How subjects are assigned to groups and how interventions are compared. [Learn more](https://en.wikipedia.org/wiki/Randomized_controlled_trial)")
             with col2:
-                intervention_type = st.selectbox("Intervention Type", get_valid_intervention_types(therapeutic_area), key=f"step1_intervention_type_select_{therapeutic_area}")
-                control_type = st.selectbox("Control Type", ["Placebo", "Standard of Care", "Active Comparator", "No Control"], key="step1_control_type_select")
+                intervention_type = st.selectbox("Intervention Type", get_valid_intervention_types(therapeutic_area), key=f"step1_intervention_type_select_{therapeutic_area}", help="The type of treatment or intervention being tested (e.g., Drug, Device, Procedure).")
+                control_type = st.selectbox("Control Type", ["Placebo", "Standard of Care", "Active Comparator", "No Control"], key="step1_control_type_select", help="The comparison group for the intervention (e.g., Placebo, Standard of Care, Active Comparator, or No Control).")
             with col3:
-                n_per_arm = st.selectbox("Sample Size Per Arm", ["<20", "20–50", "51–100", ">100"], key="step1_n_per_arm_select")
+                n_per_arm = st.selectbox("Sample Size Per Arm", ["<20", "20–50", "51–100", ">100"], key="step1_n_per_arm_select", help="The number of subjects in each group or arm. This will be reviewed later for adequacy. [Learn more](https://en.wikipedia.org/wiki/Sample_size_determination)")
                 st.caption("Note: Your sample size selection will be reviewed in later steps to ensure it is sufficient for valid statistical analysis and your desired power.")
-                randomization = st.selectbox("Randomization", ["Randomized", "Non-Randomized", "Stratified Randomization"], key="step1_randomization_select")
+                randomization = st.selectbox("Randomization", ["Randomized", "Non-Randomized", "Stratified Randomization"], key="step1_randomization_select", help="How subjects are assigned to groups. Randomization helps prevent bias. [Learn more](https://en.wikipedia.org/wiki/Randomization)")
             submitted = st.form_submit_button("Continue to Step 2")
         if submitted:
             st.session_state["therapeutic_area"] = therapeutic_area
@@ -139,7 +185,7 @@ with st.expander("Step 2: Key Modeling Details", expanded=st.session_state.get("
             moa_options,
             index=moa_options.index(default_moa) if default_moa in moa_options else 0,
             key=f"step2_moa_select_{st.session_state['therapeutic_area']}_{st.session_state['intervention_type']}",
-            help="The specific biological or technological mechanism by which the intervention works (e.g., 'Stent' for a device, 'Beta Blocker' for a drug)."
+            help="The specific biological or technological mechanism by which the intervention works (e.g., 'Stent' for a device, 'Beta Blocker' for a drug). [Learn more](https://en.wikipedia.org/wiki/Mechanism_of_action)"
         )
         endpoint_options = get_valid_endpoints(st.session_state["therapeutic_area"], st.session_state["intervention_type"], moa, st.session_state["phase"])
         default_endpoint = get_default_endpoint(st.session_state["therapeutic_area"], st.session_state["intervention_type"], st.session_state["phase"])
@@ -148,7 +194,7 @@ with st.expander("Step 2: Key Modeling Details", expanded=st.session_state.get("
             endpoint_options,
             index=endpoint_options.index(default_endpoint) if default_endpoint in endpoint_options else 0,
             key=f"step2_endpoint_select_{st.session_state['therapeutic_area']}_{st.session_state['intervention_type']}_{moa}_{st.session_state['phase']}",
-            help="The main clinical outcome used to judge the effectiveness of the intervention (e.g., 'Major Adverse Cardiac Events', 'Event-Free Survival')."
+            help="The main clinical outcome used to judge the effectiveness of the intervention (e.g., 'Major Adverse Cardiac Events', 'Event-Free Survival'). [Learn more](https://en.wikipedia.org/wiki/Endpoint_(clinical_research))"
         )
         # --- Use metaMapping for all suggestions and prepopulation ---
         meta = map_clinical_context_to_meta(
@@ -164,13 +210,13 @@ with st.expander("Step 2: Key Modeling Details", expanded=st.session_state.get("
             ["continuous", "binary", "count", "time-to-event"],
             index=["continuous", "binary", "count", "time-to-event"].index(meta["outcome_type"]),
             key="step2_outcome_type_select",
-            help="The type of data measured for the primary endpoint.\n- 'continuous': Numeric values (e.g., blood pressure, cholesterol)\n- 'binary': Yes/No or Success/Failure (e.g., event occurred)\n- 'count': Number of events (e.g., number of exacerbations)\n- 'time-to-event': Time until an event occurs (e.g., survival time)"
+            help="The type of data measured for the primary endpoint.\n- 'continuous': Numeric values (e.g., blood pressure, cholesterol)\n- 'binary': Yes/No or Success/Failure (e.g., event occurred)\n- 'count': Number of events (e.g., number of exacerbations)\n- 'time-to-event': Time until an event occurs (e.g., survival time) [Learn more](https://en.wikipedia.org/wiki/Dependent_and_independent_variables)"
         )
         n_groups = st.number_input(
             "Number of Groups",
             min_value=1, max_value=20, value=2, step=1,
             key="step2_n_groups_input",
-            help="The number of independent groups or arms in your trial (e.g., 2 for 'treatment' vs 'control')."
+            help="The number of independent groups or arms in your trial (e.g., 2 for 'treatment' vs 'control'). [Learn more](https://en.wikipedia.org/wiki/Randomized_controlled_trial)"
         )
         # --- Repeated Measures Logic with Advanced Override ---
         repeated_measures_allowed = "Time" in meta["repeated_factors"]
@@ -232,7 +278,7 @@ with st.expander("Step 2: Key Modeling Details", expanded=st.session_state.get("
         covariates = st.text_input(
             "Covariates (comma-separated, optional)",
             key="step2_covariates_input",
-            help="Other variables you want to adjust for in the analysis (e.g., age, sex, baseline disease severity). Example: 'age, sex, baseline LDL'."
+            help="Other variables you want to adjust for in the analysis (e.g., age, sex, baseline disease severity). Example: 'age, sex, baseline LDL'. [Learn more](https://en.wikipedia.org/wiki/Covariate)"
         )
         st.markdown("**When ready, continue to model selection and data gathering.**")
         if st.button("Continue to Model Selection", key="step2_continue_model_inference"):
@@ -314,6 +360,21 @@ with st.expander("Step 3: Model Inference & Data Template", expanded=st.session_
             # Display primary recommendation
             st.success(f"Recommended Model: **{best_model.label}**")
             st.markdown(f"**Description:** {best_model.description}")
+
+            # --- Model Assumptions & Details ---
+            test_key = get_canonical_test_key(best_model.label)
+            test_expl = explain_test(test_key)
+            st.info(
+                f"**Test:** {test_expl.get('title', best_model.label)}\n\n"
+                f"**Summary:** {test_expl.get('summary', 'N/A')}\n\n"
+                f"**When to Use:** {test_expl.get('when_to_use', 'N/A')}\n\n"
+                f"**Assumptions:** {test_expl.get('assumptions', 'N/A')}\n\n"
+                f"**Limitations:** {test_expl.get('limitations', 'N/A')}\n\n"
+                f"{'**Reference:** [Link](' + test_expl.get('reference', '#') + ')' if test_expl.get('reference') else ''}\n\n"
+                f"**Software/Method:** {test_expl.get('software', 'N/A')}"
+            )
+            if test_key == best_model.label:
+                st.warning(f"No canonical mapping for model label '{best_model.label}'. Please add it to get_canonical_test_key to ensure explanations are shown.")
 
             # Design Tags with label and explanation
             st.markdown("**Design Tags (model requirements/features):**")
@@ -623,6 +684,137 @@ if st.session_state.get("progress_step", 1) == 5:
     with st.expander("Step 5: Review & Confirm & Run Statistical Analysis", expanded=True):
         st.header("Run Statistical Analysis")
         st.success("Ready to run analysis with the confirmed configuration.")
+
+        # --- Model Assumptions, Checks & Details ---
+        from lib.explainer.explain_test_selection import explain_test
+        model_id = st.session_state.get("selected_model_id")
+        best_model = get_model_by_id(model_id) if model_id else None
+        test_key = get_canonical_test_key(best_model.label if best_model else model_id)
+        test_expl = explain_test(test_key)
+        results = st.session_state.get("analysis_results", {})
+        with st.expander("ℹ️ Model Assumptions, Checks & Details", expanded=True):
+            st.markdown(f"**Test:** {test_expl.get('title', model_id)}")
+            st.markdown(f"**Summary:** {test_expl.get('summary', 'N/A')}")
+            st.markdown(f"**When to Use:** {test_expl.get('when_to_use', 'N/A')}")
+            st.markdown(f"**Assumptions:** {test_expl.get('assumptions', 'N/A')}")
+            st.markdown(f"**Limitations:** {test_expl.get('limitations', 'N/A')}")
+            st.markdown(f"**Reference:** [Link]({test_expl.get('reference', '#')})" if test_expl.get('reference') else "")
+            st.markdown(f"**Software/Method:** {test_expl.get('software', 'N/A')}")
+            if test_key == (best_model.label if best_model else model_id):
+                st.warning(f"No canonical mapping for model label '{best_model.label if best_model else model_id}'. Please add it to get_canonical_test_key to ensure explanations are shown.")
+            # Show actual assumption check results if available
+            if 'Assumptions' in results:
+                st.markdown("---")
+                st.markdown("**Assumption Check Results:**")
+                assumptions = results['Assumptions']
+                if 'Shapiro-Wilk' in assumptions:
+                    p = assumptions['Shapiro-Wilk'][1]
+                    st.markdown(f"- Shapiro-Wilk test for normality: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})")
+                if 'Levene' in assumptions:
+                    p = assumptions['Levene'][1]
+                    st.markdown(f"- Levene's test for equal variances: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})")
+                if 'Mauchly-Sphericity' in assumptions:
+                    p = assumptions['Mauchly-Sphericity'].get('p_value', None)
+                    if p is not None:
+                        st.markdown(f"- Mauchly's test for sphericity: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})")
+                if any((('Shapiro-Wilk' in assumptions and assumptions['Shapiro-Wilk'][1] < 0.05),
+                        ('Levene' in assumptions and assumptions['Levene'][1] < 0.05),
+                        ('Mauchly-Sphericity' in assumptions and assumptions['Mauchly-Sphericity'].get('p_value', 1) < 0.05))):
+                    st.warning("One or more assumptions failed. An alternative test or correction was used where appropriate. See results below.")
+
+        # --- Methods & Software ---
+        import sys
+        import statsmodels, scipy, pandas, numpy
+        try:
+            import lifelines
+            lifelines_version = lifelines.__version__
+        except ImportError:
+            lifelines_version = None
+        with st.expander("🛠️ Methods & Software", expanded=False):
+            st.markdown(f"**Main Statistical Test:** {test_expl.get('title', model_id)} ([reference]({test_expl.get('reference', '#')}))")
+            st.markdown(f"**Power/Sample Size Calculation:** " + ("Closed-form formula for t-test/ANOVA ([statsmodels documentation](https://www.statsmodels.org/stable/power.html))" if best_model and best_model.model_id in ['t_test', 'one_way_anova'] else "N/A or not available for this model."))
+            st.markdown("**Python Packages Used:**")
+            st.markdown(f"- statsmodels {statsmodels.__version__}")
+            st.markdown(f"- scipy {scipy.__version__}")
+            st.markdown(f"- pandas {pandas.__version__}")
+            st.markdown(f"- numpy {numpy.__version__}")
+            if lifelines_version:
+                st.markdown(f"- lifelines {lifelines_version}")
+            st.markdown(f"- Python {sys.version.split()[0]}")
+
+        # --- Downloadable Analysis Report ---
+        import io
+        if st.button("Download Analysis Report (Markdown)"):
+            report = io.StringIO()
+            report.write(f"# Clinical Trial Analysis Report\n\n")
+            report.write(f"## Trial Setup\n")
+            for k in ["therapeutic_area", "phase", "design_type", "intervention_type", "control_type", "n_per_arm", "randomization"]:
+                v = st.session_state.get(k, "N/A")
+                report.write(f"- **{k.replace('_', ' ').title()}:** {v}\n")
+            report.write(f"\n## Modeling Details\n")
+            for k in ["moa", "endpoint", "outcome_type", "n_groups", "repeated_measures", "covariates"]:
+                v = st.session_state.get(k, "N/A")
+                report.write(f"- **{k.replace('_', ' ').title()}:** {v}\n")
+            report.write(f"\n## Recommended Model/Test\n")
+            report.write(f"- **Test:** {test_expl.get('title', model_id)}\n")
+            report.write(f"- **Summary:** {test_expl.get('summary', 'N/A')}\n")
+            report.write(f"- **When to Use:** {test_expl.get('when_to_use', 'N/A')}\n")
+            report.write(f"- **Assumptions:** {test_expl.get('assumptions', 'N/A')}\n")
+            report.write(f"- **Limitations:** {test_expl.get('limitations', 'N/A')}\n")
+            report.write(f"- **Reference:** {test_expl.get('reference', 'N/A')}\n")
+            report.write(f"- **Software/Method:** {test_expl.get('software', 'N/A')}\n")
+            report.write(f"\n## Assumption Check Results\n")
+            if 'Assumptions' in results:
+                assumptions = results['Assumptions']
+                if 'Shapiro-Wilk' in assumptions:
+                    p = assumptions['Shapiro-Wilk'][1]
+                    report.write(f"- Shapiro-Wilk test for normality: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})\n")
+                if 'Levene' in assumptions:
+                    p = assumptions['Levene'][1]
+                    report.write(f"- Levene's test for equal variances: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})\n")
+                if 'Mauchly-Sphericity' in assumptions:
+                    p = assumptions['Mauchly-Sphericity'].get('p_value', None)
+                    if p is not None:
+                        report.write(f"- Mauchly's test for sphericity: p = {p:.4g} ({'PASS' if p >= 0.05 else 'FAIL'})\n")
+                if any((('Shapiro-Wilk' in assumptions and assumptions['Shapiro-Wilk'][1] < 0.05),
+                        ('Levene' in assumptions and assumptions['Levene'][1] < 0.05),
+                        ('Mauchly-Sphericity' in assumptions and assumptions['Mauchly-Sphericity'].get('p_value', 1) < 0.05))):
+                    report.write("- One or more assumptions failed. An alternative test or correction was used where appropriate.\n")
+            else:
+                report.write("- Assumption checks not available.\n")
+            report.write(f"\n## Methods & Software\n")
+            report.write(f"- Main Statistical Test: {test_expl.get('title', model_id)} ({test_expl.get('reference', 'N/A')})\n")
+            report.write(f"- Power/Sample Size Calculation: " + ("Closed-form formula for t-test/ANOVA (https://www.statsmodels.org/stable/power.html)" if best_model and best_model.model_id in ['t_test', 'one_way_anova'] else "N/A or not available for this model.") + "\n")
+            report.write(f"- Python Packages Used:\n")
+            report.write(f"    - statsmodels {statsmodels.__version__}\n")
+            report.write(f"    - scipy {scipy.__version__}\n")
+            report.write(f"    - pandas {pandas.__version__}\n")
+            report.write(f"    - numpy {numpy.__version__}\n")
+            if lifelines_version:
+                report.write(f"    - lifelines {lifelines_version}\n")
+            report.write(f"    - Python {sys.version.split()[0]}\n")
+            report.write(f"\n## Main Results\n")
+            # Add main results if available
+            if 'T-test' in results:
+                report.write(f"### T-test Results\n{results['T-test']}\n")
+            if 'ANOVA' in results:
+                report.write(f"### ANOVA Table\n{results['ANOVA']}\n")
+            if 'Effect Sizes' in results:
+                report.write(f"### Effect Sizes\n{results['Effect Sizes']}\n")
+            if 'Alternative Test' in results:
+                report.write(f"### Alternative Test (Assumptions Failed)\n{results['Alternative Test']}\n")
+            if 'Quality Report' in results:
+                report.write(f"### Data Quality Report\n{results['Quality Report']}\n")
+            # Add any warnings
+            if 'Warnings' in results:
+                report.write(f"### Warnings\n{results['Warnings']}\n")
+            st.download_button(
+                label="Download Markdown Report",
+                data=report.getvalue(),
+                file_name="clinical_trial_analysis_report.md",
+                mime="text/markdown",
+                key="step5_download_report"
+            )
 
         # Get data and model info
         data = st.session_state.get("data")

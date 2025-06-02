@@ -79,11 +79,12 @@ def main():
         st.markdown("<div class='sidebar-divider'></div>", unsafe_allow_html=True)
         
         # Page-specific controls
-        st.title("Interactive Dashboard")
+        st.title("Interactive Data Visualization Dashboard")
         st.write("Explore and visualize clinical trial data.")
     
     # Main content
-    st.markdown("<h1 class='dash-title'>Interactive Clinical Trial Data Explorer</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='dash-title'>📈 Interactive Data Visualization Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 p class='subtitle'>Interactively explore, visualize, and filter clinical trial datasets. Create custom plots and gain insights with real-time, dynamic visualizations.</h3>", unsafe_allow_html=True)
     
     # Data selection section
     st.header("Data Selection")

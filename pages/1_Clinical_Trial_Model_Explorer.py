@@ -52,14 +52,14 @@ def main():
         }
         </style>
     """, unsafe_allow_html=True)
-    st.markdown("<h1 class='header'>Stats Models for Clinical Trials</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 p class='subtitle'>Use the Sidebar to Explore Models</h3>", unsafe_allow_html=True)
+    st.markdown("<h1 class='header'>📊 Clinical Trial Model Explorer</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 p class='subtitle'>Explore and compare common statistical models for clinical trial data. Use built-in examples or upload your own data for quick, static analysis and visualization.</h3>", unsafe_allow_html=True)
     # Sidebar: Split into navigation and page-specific controls
     with st.sidebar:
             
     
         # Page-specific controls
-        st.title("Clinical Trial Analysis")
+        st.title("Clinical Trial Model Explorer")
         st.write("Select a statistical model and analyze an example analysis or input your data to analyze.")
 
         # Step 1: Model Selection

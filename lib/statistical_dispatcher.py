@@ -25,5 +25,7 @@ def run_statistical_model(model_id, data, outcome, between_factors=None, within_
         return model.run_mixed_anova_1b2r(outcome, between_factors, within_factors)
     elif model_id == "complex_mixed_anova":
         return model.run_complex_mixed_anova(outcome, between_factors, within_factors)
+    elif model_id == "log_rank_test":
+        raise NotImplementedError("Log-rank test not yet implemented. Please use a survival analysis package such as lifelines.")
     else:
         raise ValueError(f"Unsupported model_id: {model_id}")
